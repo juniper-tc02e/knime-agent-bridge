@@ -110,7 +110,10 @@ test('native error code and details survive without being converted to success',
   const f = await fixture(t, { respond: r => ({ id: r.id, ok: false, error: { code: 'INVALID_SETTINGS', message: 'Missing column', details: { nodeId: 'root:4', column: '数量' } } }) });
   await assert.rejects(f.client.call('core.configure'), e => {
     assert.equal(e.code, 'INVALID_SETTINGS');
-    assert.deepEqual(e.details, { nodeId: 'root:4', column: '数量' });
+    assert.equal(e.details.nodeId, 'root:4');
+    assert.equal(e.details.column, '数量');
+    assert.equal(e.details.operationId, e.details.requestId);
+    assert.equal(e.details.sessionId, 'knime-test');
     return true;
   });
   assert.deepEqual(await readdir(path.join(f.sessionDir, 'responses')), []);
@@ -144,7 +147,7 @@ test('CLI help/version work without KNIME and invalid flags fail with JSON diagn
   assert.match(help.stdout, /sessions/);
   const version = await cli(['--version']);
   assert.equal(version.code, 0);
-  assert.match(version.stdout, /^0\.1\.0-beta\.1/);
+  assert.match(version.stdout, /^0\.2\.0-beta\.1/);
   const error = await cli(['health', '--surprise']);
   assert.equal(error.code, 1);
   assert.equal(error.stdout, '');

@@ -5,18 +5,19 @@ import fs from 'node:fs/promises';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
 import {configureTableCreatorFixture,executeAndWaitForNode,tableCreatorFixtureRows} from './helpers/table-fixture.mjs';
+import {guardedMcp} from './helpers/guarded-native.mjs';
 
 // Every operation here crosses the real MCP stdio connection and the live Java
 // bridge. The test only creates its own disposable workflow in the beta workspace.
 test('MCP creates, configures, edits, executes, inspects and persists a real KNIME workflow', {timeout:180000}, async()=>{
  const client=new Client({name:'knime-native-beta-test',version:'0.1.0'});
- const transport=new StdioClientTransport({command:process.execPath,args:[path.resolve('src/server.mjs')],stderr:'pipe'});
+ const transport=new StdioClientTransport({command:process.execPath,args:[path.resolve('src/server.mjs'),'--runtime',process.env.KNIME_AGENT_RUNTIME||path.resolve('runtime')],stderr:'pipe'});
  await client.connect(transport);
- const invoke=async(name,args={})=>{
+ const invoke=guardedMcp(async(name,args={})=>{
   const r=await client.callTool({name,arguments:args});
   if(r.isError)throw new Error(JSON.stringify(r.structuredContent || r.content));
   return r.structuredContent;
- };
+ });
  const gateway=(method,params={})=>invoke('knime_gateway_call',{method,params});
  const core=(operation,args={})=>invoke('knime_core_call',{operation,args});
  const desktop=(operation,args={})=>invoke('knime_desktop_call',{operation,args});

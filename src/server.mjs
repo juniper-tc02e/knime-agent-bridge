@@ -10,7 +10,7 @@ import { VERSION, parseCli } from './cli.mjs';
 
 export function createServer({ client = new BridgeClient() } = {}) {
   const server = new McpServer({ name: 'knime-agent-bridge', version: VERSION }, {
-    instructions: 'Read knime://guide. Inspect knime_sessions and knime_health first. Select an explicit session if several instances are running. Use knime_describe for gateway services/entities, core.describe via knime_core_call for engine operations, and desktop.describe via knime_desktop_call for visible editor actions. Re-read state after changes. A timeout means unknown outcome: do not automatically retry mutations. Gateway services and nodes may use network or paid services; do not invoke Kai, Hub or external actions merely for context.',
+    instructions: 'Read knime://guide. Inspect knime_sessions and knime_health, then bind knime_context to the intended project/scope. Use current revision preconditions for mutations. Discover gateway entities and native core/desktop contracts before use. For canvas work, obtain actual images with knime_canvas_view, inspect readable tiles, run knime_layout_check and preserve instructional groups/pins. Re-render after edits. A screenshot generated, command acknowledged or node executed is not visual completion. Use separate quality dimensions and disclose incomplete coverage. Timeout is unknown: reconcile knime_operation, never automatically retry. Do not invoke Kai, Hub, external or paid services merely for context.',
   });
   for (const tool of toolCatalog) {
     const { name, run: _run, ...config } = tool;

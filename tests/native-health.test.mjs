@@ -3,9 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {needsGuard,targetArgs} from './helpers/guarded-native.mjs';
 
 const runtime = process.env.KNIME_AGENT_RUNTIME || path.resolve('runtime');
 export async function nativeCall(operation, args = {}, timeoutMs = 30000) {
+  let precondition;
+  if(needsGuard(operation,args)) {
+    try {const context=await nativeCall('context.bind',targetArgs(operation,args),timeoutMs);precondition={contextId:context.contextId,expected:context.revisions??{}};}
+    catch(error) {if(!/not found|not loaded|unknown.*project/i.test(error.message))throw error;}
+  }
   const sessions = await fs.readdir(path.join(runtime, 'sessions')).catch(() => []);
   const active = [];
   for (const id of sessions) {
@@ -17,7 +23,7 @@ export async function nativeCall(operation, args = {}, timeoutMs = 30000) {
   assert.equal(active.length,1,'Expected exactly one ready live KNIME bridge');
   const dir=path.join(runtime,'sessions',active[0].id), id=randomUUID();
   const req=path.join(dir,'requests',id+'.json');
-  await fs.writeFile(req+'.tmp',JSON.stringify({id,operation,args}));
+  await fs.writeFile(req+'.tmp',JSON.stringify({id,operation,args,...(precondition?{precondition}:{})}));
   await fs.rename(req+'.tmp',req);
   const response=path.join(dir,'responses',id+'.json');
   const deadline=Date.now()+timeoutMs;

@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {randomUUID} from 'node:crypto';
+import {BridgeClient} from '../src/client.mjs';
+import {readOperation} from '../src/operations.mjs';
+test('stopped-session receipts are recoverable without selecting a new process',async t=>{
+ const runtime=await fs.mkdtemp(path.join(os.tmpdir(),'knime-journal-'));t.after(()=>fs.rm(runtime,{recursive:true,force:true}));
+ const dir=path.join(runtime,'sessions','old','operations');await fs.mkdir(dir,{recursive:true});
+ const operationId=randomUUID(),base={operationId,sessionId:'old',status:'running',response:{result:'private replay payload'}};
+ await fs.writeFile(path.join(dir,operationId+'.json'),JSON.stringify(base));
+ const client=new BridgeClient({runtime});
+ const r=await readOperation(client,{sessionId:'old',operationId});
+ assert.equal(r.status,'unknown_after_restart');assert.equal(r.response,undefined);
+ await fs.writeFile(path.join(dir,operationId+'.json'),JSON.stringify({...base,status:'applied'}));
+ assert.equal((await readOperation(client,{sessionId:'old',operationId})).status,'applied');
+ await assert.rejects(readOperation(client,{sessionId:'../outside',operationId}),{code:'INVALID_ARGUMENT'});
+ await assert.rejects(readOperation(client,{sessionId:'old',operationId:randomUUID()}),{code:'OPERATION_NOT_FOUND'});
+});

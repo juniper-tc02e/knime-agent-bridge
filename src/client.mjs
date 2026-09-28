@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const OPERATION = /^[A-Za-z][A-Za-z0-9_.]*$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 export class BridgeError extends Error {
@@ -92,27 +93,35 @@ export class BridgeClient {
     return alive[0];
   }
 
-  async call(operation, args = {}, { session = this.session, timeoutMs = this.timeoutMs } = {}) {
+  async call(operation, args = {}, { session = this.session, timeoutMs = this.timeoutMs, precondition, operationId = randomUUID() } = {}) {
     if (typeof operation !== 'string' || !OPERATION.test(operation) || !object(args)) {
       throw new BridgeError('INVALID_ARGUMENT', 'Operation must be a nonempty operation name and args must be a JSON object.');
     }
     positive(timeoutMs, 'timeoutMs');
-    const id = randomUUID();
+    if (!UUID.test(operationId)) throw new BridgeError('INVALID_ARGUMENT', 'operationId must be a UUID. Reuse only to reconcile the identical request.');
+    if (precondition !== undefined && (!object(precondition) || Object.keys(precondition).some(key => !['contextId','expected'].includes(key)) || typeof precondition.contextId !== 'string' || !precondition.contextId || !object(precondition.expected) || Object.entries(precondition.expected).some(([key,value]) => !['structure','configuration','layout','execution'].includes(key) || typeof value !== 'string' || !value))) {
+      throw new BridgeError('INVALID_ARGUMENT', 'precondition requires contextId and an expected revision object.');
+    }
+    const id = operationId;
     const selected = await this.selectSession(session);
+    // Once used, this client stays with that process even if another instance
+    // later becomes the sole live session. Explicit selection remains possible.
+    if (this.session === undefined) this.session = selected.id;
     let payload;
-    try { payload = JSON.stringify({ id, operation, args, expiresAt: new Date(Date.now() + timeoutMs).toISOString() }); }
+    try { payload = JSON.stringify({ id, operation, args, ...(precondition ? {precondition} : {}), expiresAt: new Date(Date.now() + timeoutMs).toISOString() }); }
     catch (error) { throw new BridgeError('INVALID_ARGUMENT', `Arguments must be serializable JSON: ${error.message}`); }
     const sessionDir = path.join(this.runtime, 'sessions', selected.id);
     const requestPath = path.join(sessionDir, 'requests', `${id}.json`);
     const tempPath = `${requestPath}.tmp`;
     const responsePath = path.join(sessionDir, 'responses', `${id}.json`);
-    const details = { requestId: id, sessionId: selected.id, operation, outcome: 'unknown' };
+    const details = { requestId: id, operationId: id, sessionId: selected.id, operation, outcome: 'unknown' };
+    this.lastOperation = details;
     try {
       await writeFile(tempPath, payload, { flag: 'wx', mode: 0o600 });
       await rename(tempPath, requestPath);
     } catch (error) {
       await unlink(tempPath).catch(() => {});
-      throw new BridgeError('IPC_ERROR', `Could not publish the KNIME request: ${error.message}`, { requestId: id, sessionId: selected.id, operation, outcome: 'not_submitted' });
+      throw new BridgeError('IPC_ERROR', `Could not publish the KNIME request: ${error.message}`, { ...details, outcome: 'not_submitted' });
     }
 
     // Once published, leave the request to the bridge. Timeout or client shutdown
@@ -138,7 +147,8 @@ export class BridgeClient {
         } finally {
           await unlink(responsePath).catch(() => {});
         }
-        if (!response.ok) throw new BridgeError(response.error.code, response.error.message, response.error.details ?? {});
+        this.lastReceipt = response.receipt;
+        if (!response.ok) throw new BridgeError(response.error.code, response.error.message, { ...details, ...response.error.details });
         return response.result;
       }
       const remaining = deadline - performance.now();

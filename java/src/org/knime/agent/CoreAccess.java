@@ -20,6 +20,14 @@ import org.knime.gateway.impl.project.ProjectManager;
 
 /** Native adapters over the same loaded project model as KNIME's canvas. */
 public final class CoreAccess {
+    private record TableIdentity(java.lang.ref.WeakReference<BufferedDataTable> reference,String id){}
+    private static final List<TableIdentity> TABLE_IDENTITIES=new ArrayList<>();
+    private static synchronized String tableIdentity(BufferedDataTable table) {
+        TABLE_IDENTITIES.removeIf(entry->entry.reference().get()==null);
+        for(TableIdentity entry:TABLE_IDENTITIES)if(entry.reference().get()==table)return entry.id();
+        if(TABLE_IDENTITIES.size()>=4096)TABLE_IDENTITIES.clear(); // Eviction changes IDs, conservatively invalidating paged reads.
+        String id=UUID.randomUUID().toString();TABLE_IDENTITIES.add(new TableIdentity(new java.lang.ref.WeakReference<>(table),id));return id;
+    }
     private static final List<String> OPERATIONS=List.of("core.describe","core.snapshot","core.settings.get","core.settings.patch",
         "core.execute","core.reset","core.cancel","core.table.read","core.port.inspect","core.port.export",
         "core.nodes.search","core.nodes.details");
@@ -109,7 +117,7 @@ public final class CoreAccess {
             default -> throw new IllegalArgumentException("Unknown core operation: "+operation);
         };
     }
-    private static void validateArguments(String operation,JsonNode args) {
+    static void validateArguments(String operation,JsonNode args) {
         JsonNode parameters=((JsonNode)describe()).path("contracts").path(operation).path("parameters");
         if(parameters.isMissingNode())throw new IllegalArgumentException("Unknown core operation: "+operation);
         JsonNode properties=parameters.path("properties");
@@ -134,13 +142,7 @@ public final class CoreAccess {
         for(JsonNode field:parameters.path("required"))if(!args.has(field.asText()))
             throw new IllegalArgumentException(field.asText()+" is required for "+operation);
     }
-    private static WorkflowManager root(JsonNode args) {
-        String projectId=required(args,"projectId");
-        var project=ProjectManager.getInstance().getProject(projectId)
-            .orElseThrow(()->new IllegalArgumentException("Project not found: "+projectId));
-        return project.getWorkflowManagerIfLoaded()
-            .orElseThrow(()->new IllegalArgumentException("Project is not loaded: "+projectId));
-    }
+    private static WorkflowManager root(JsonNode args) { return NativeTarget.root(args); }
     private static String required(JsonNode args,String key) {
         JsonNode value=args.path(key);
         if(!value.isTextual()||value.asText().isBlank())throw new IllegalArgumentException(key+" must be a nonempty string");
@@ -159,54 +161,9 @@ public final class CoreAccess {
         try {long value=Long.parseLong(n.asText());if(value>=0)return value;}catch(NumberFormatException ignored){}
         throw new IllegalArgumentException("offset must be a nonnegative integer within signed 64-bit range");
     }
-    private static WorkflowManager nested(NodeContainer nc) {
-        if(nc instanceof WorkflowManager w)return w;
-        if(nc instanceof SubNodeContainer s)return s.getWorkflowManager();
-        return null;
-    }
-    private static String relative(WorkflowManager root,NodeID id) {
-        String prefix=root.getID().toString(),full=id.toString();
-        return full.equals(prefix)?"root":full.startsWith(prefix+":")?"root:"+full.substring(prefix.length()+1):full;
-    }
-    private static NodeContainer find(WorkflowManager root,String value) {
-        if(value.equals("root")||value.equals(root.getID().toString()))return root;
-        boolean absolute=value.startsWith("root:")||value.startsWith(root.getID()+":");
-        String full=value.startsWith("root:")?root.getID()+value.substring(4):value;
-        NodeContainer nc=findExact(root,full,0);
-        if(nc==null&&!absolute)nc=findExact(root,root.getID()+":"+value,0);
-        if(nc==null)throw new IllegalArgumentException("Node or workflow not found: "+value);
-        return nc;
-    }
-    private static NodeContainer findExact(WorkflowManager w,String id,int depth) {
-        if(depth>128)throw new IllegalArgumentException("Workflow nesting exceeds supported resolver depth");
-        if(w.getID().toString().equals(id))return w;
-        for(NodeContainer nc:w.getNodeContainers()) {
-            if(nc.getID().toString().equals(id))return nc;
-            WorkflowManager child=nested(nc);
-            if(child!=null) {NodeContainer found=findExact(child,id,depth+1);if(found!=null)return found;}
-        }
-        return null;
-    }
-    private static WorkflowManager selectedWorkflow(WorkflowManager root,JsonNode args) {
-        if(!args.hasNonNull("workflowId")||args.path("workflowId").asText().equals("root"))return root;
-        NodeContainer nc=find(root,required(args,"workflowId"));WorkflowManager w=nested(nc);
-        if(w==null)throw new IllegalArgumentException("workflowId does not identify a component or metanode");return w;
-    }
-    private static NodeContainer selectedNode(WorkflowManager root,JsonNode args) {
-        WorkflowManager w=selectedWorkflow(root,args);
-        if(!args.hasNonNull("nodeId"))return w;
-        String node=required(args,"nodeId");
-        // Gateway IDs are project-relative even when the caller scopes the lookup to a nested workflow.
-        String projectRootId=root.getID().toString();
-        boolean absolute=node.equals("root")||node.startsWith("root:")||node.equals(projectRootId)||node.startsWith(projectRootId+":");
-        if(absolute) {
-            String nativeId=node.equals("root")?projectRootId:node.startsWith("root:")?projectRootId+node.substring(4):node;
-            NodeContainer match=findExact(w,nativeId,0);
-            if(match==null)throw new IllegalArgumentException("Node or workflow not found inside selected workflow: "+node);
-            return match;
-        }
-        return find(w,node);
-    }
+    private static WorkflowManager nested(NodeContainer nc) { return NativeTarget.nested(nc); }
+    private static String relative(WorkflowManager root,NodeID id) { return NativeTarget.relative(root,id); }
+    private static NodeContainer selectedNode(WorkflowManager root,JsonNode args) { return NativeTarget.node(root,args); }
     private static Object snapshot(JsonNode args) throws Exception {
         WorkflowManager root=root(args);
         int depth=bounded(args,"depth",1,0,8),maxNodes=bounded(args,"maxNodes",2000,1,10000);
@@ -285,7 +242,8 @@ public final class CoreAccess {
     private static ObjectNode outputSummary(NodeOutPort p) {
         ObjectNode out=portSummary(p);out.put("dataAvailable",p.getPortObject()!=null).put("specAvailable",p.getPortObjectSpec()!=null)
             .put("inactive",p.isInactive()).put("summary",p.getPortSummary());
-        if(p.getPortObjectSpec() instanceof DataTableSpec spec)out.set("schema",schema(spec,null));return out;
+        if(p.getPortObjectSpec() instanceof DataTableSpec spec)out.set("schema",schema(spec,null));
+        if(p.getPortObject() instanceof BufferedDataTable table)out.put("tableIdentity",tableIdentity(table));return out;
     }
     private static void addSettings(NodeContainer nc,ObjectNode out) {
         try {out.set("settings",SettingsCodec.encode(nc.getNodeSettings()));}
@@ -299,6 +257,7 @@ public final class CoreAccess {
             try {
                 NodeSettings settings=nc.getNodeSettings();
                 if(patch) {
+                    OperationPolicy.apply();
                     if(nc==root)throw new IllegalArgumentException("Patch an individual node, component, or metanode, not the project root");
                     SettingsCodec.patch(settings,args.path("patches"));
                     nc.getParent().loadNodeSettings(nc.getID(),settings);
@@ -318,6 +277,7 @@ public final class CoreAccess {
             NodeContext.pushContext(nc);
             try {
                 WorkflowManager w=nc instanceof WorkflowManager workflow?workflow:null;
+                OperationPolicy.apply();
                 switch(operation) {
                     case "core.execute" -> {if(w!=null){if(!w.canExecuteAll())throw new IllegalStateException("Workflow cannot execute in its current state");w.executeAll();}
                         else {if(!nc.getParent().canExecuteNode(nc.getID()))throw new IllegalStateException("Node cannot execute in its current state");nc.getParent().executeUpToHere(nc.getID());}}
@@ -346,6 +306,7 @@ public final class CoreAccess {
             if(po!=null)out.put("objectClass",po.getClass().getName()).put("table",po instanceof BufferedDataTable);
             if(po instanceof BufferedDataTable table)out.put("totalRows",Long.toString(table.size()));
             if(export) {
+                OperationPolicy.apply();
                 if(po==null)throw new IllegalStateException("Output data is unavailable; execute the node first");
                 String name=po.getClass().getName().toLowerCase(Locale.ROOT);
                 if(name.contains("credential")||name.contains("secret"))throw new IllegalArgumentException("Credential port objects cannot be exported through this adapter");
@@ -401,6 +362,7 @@ public final class CoreAccess {
             } else columns=java.util.stream.IntStream.range(0,spec.getNumColumns()).toArray();
             long total=table.size();ObjectNode out=BridgeActivator.JSON.createObjectNode().put("nodeId",nc.getID().toString())
                 .put("portIndex",port.getPortIndex()).put("offset",Long.toString(offset)).put("limit",limit).put("totalRows",Long.toString(total));
+            out.put("tableIdentity",tableIdentity(table)).put("stableReadPolicy","native-immutable-buffered-table");
             out.set("schema",schema(spec,columns));ArrayNode rows=out.putArray("rows");
             if(offset<total) {
                 long end=offset+Math.min((long)limit,total-offset)-1;

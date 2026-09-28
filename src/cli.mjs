@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { BridgeClient, BridgeError } from './client.mjs';
 import { dispatchTool, errorPayload } from './catalog.mjs';
+import {IMAGES} from './mcp-result.mjs';
 
-export const VERSION = '0.1.0-beta.1';
+export const VERSION = '0.2.0-beta.1';
 const HELP = `KNIME Agent Bridge ${VERSION}
 
 Usage: knime-agent <command> [arguments] [options]
@@ -18,6 +19,7 @@ Commands:
   call Service.method                Invoke a discovered gateway method
   core core.operation                Invoke a documented native core operation
   desktop desktop.operation          Invoke a discovered visible editor action
+  tool knime_tool_name               Invoke any MCP tool using --args-file
   mcp                                Start the MCP stdio server
 
 Options:
@@ -26,6 +28,8 @@ Options:
   --params JSON                      Named object or positional array for gateway call
   --args JSON                        Named object for core/desktop call
   --args-file PATH                    UTF-8 JSON file for call/core/desktop arguments
+  --precondition-file PATH            Context/revisions JSON for a native mutation
+  --output DIRECTORY                  Export tool image artifacts (tool command)
   --service NAME --method NAME        Optional describe filters
   --entity NAME                      Describe an installed command/entity schema
   --timeout-ms N                     Response timeout (default 30000)
@@ -42,7 +46,7 @@ export function parseCli(argv) {
   try {
     parsed = parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
       runtime: { type: 'string' }, session: { type: 'string' }, params: { type: 'string' }, args: { type: 'string' },
-      'args-file': { type: 'string' }, service: { type: 'string' }, method: { type: 'string' }, entity: { type: 'string' },
+      'args-file': { type: 'string' }, 'precondition-file': {type:'string'}, output:{type:'string'}, service: { type: 'string' }, method: { type: 'string' }, entity: { type: 'string' },
       'timeout-ms': { type: 'string' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     } });
   } catch (error) { throw new BridgeError('INVALID_ARGUMENT', error.message); }
@@ -72,13 +76,13 @@ export async function runCli(argv = process.argv.slice(2)) {
   const [command, ...rest] = positionals;
   const client = new BridgeClient(clientOptions);
   const allowed = {
-    sessions: [], health: [], describe: ['service', 'method', 'entity'], call: ['params', 'args-file'], core: ['args', 'args-file'], desktop: ['args', 'args-file'], mcp: [],
+    sessions: [], health: [], describe: ['service', 'method', 'entity'], call: ['params', 'args-file','precondition-file'], core: ['args', 'args-file','precondition-file'], desktop: ['args', 'args-file','precondition-file'], tool:['args','args-file','output'], mcp: [],
   };
   if (!(command in allowed)) throw new BridgeError('INVALID_ARGUMENT', `Unknown command '${command}'. Use --help.`);
-  for (const key of ['params', 'args', 'args-file', 'service', 'method', 'entity']) {
+  for (const key of ['params', 'args', 'args-file', 'precondition-file','output','service', 'method', 'entity']) {
     if (values[key] !== undefined && !allowed[command].includes(key)) throw new BridgeError('INVALID_ARGUMENT', `--${key} is not valid for ${command}.`);
   }
-  if (rest.length > (command === 'describe' ? 2 : ['call', 'core', 'desktop'].includes(command) ? 1 : 0)) throw new BridgeError('INVALID_ARGUMENT', `Too many positional arguments for ${command}.`);
+  if (rest.length > (command === 'describe' ? 2 : ['call', 'core', 'desktop','tool'].includes(command) ? 1 : 0)) throw new BridgeError('INVALID_ARGUMENT', `Too many positional arguments for ${command}.`);
   if (command === 'mcp') { const { startServer } = await import('./server.mjs'); await startServer({ client }); return; }
   let name, input;
   if (command === 'sessions') { name = 'knime_sessions'; input = {}; }
@@ -87,7 +91,17 @@ export async function runCli(argv = process.argv.slice(2)) {
   if (command === 'call') { name = 'knime_gateway_call'; input = { method: rest[0], params: await jsonArgs(values, command) }; }
   if (command === 'core') { name = 'knime_core_call'; input = { operation: rest[0], args: await jsonArgs(values, command) }; }
   if (command === 'desktop') { name = 'knime_desktop_call'; input = { operation: rest[0], args: await jsonArgs(values, command) }; }
+  if (command === 'tool') { name=rest[0];input=await jsonArgs(values,command); }
+  if(values['precondition-file'])input.precondition=JSON.parse((await readFile(values['precondition-file'],'utf8')).replace(/^\uFEFF/,''));
   const result = await dispatchTool(client, name, input);
+  if(values.output) {
+    const output=path.resolve(values.output);await mkdir(output,{recursive:true});
+    for(const image of result[IMAGES]??[]) {
+      if(!/^[A-Za-z0-9._-]+$/.test(image.artifactId))throw new BridgeError('INVALID_ARTIFACT','Image artifact ID is not a safe export name.');
+      await writeFile(path.join(output,image.artifactId.endsWith('.png')?image.artifactId:image.artifactId+'.png'),image.data,{flag:'wx'});
+    }
+    await writeFile(path.join(output,'evidence-'+Date.now()+'.json'),JSON.stringify(result,null,2),{flag:'wx'});
+  }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
