@@ -1,0 +1,472 @@
+package org.knime.agent;
+
+import java.nio.file.*;
+import java.util.*;
+import java.io.StringWriter;
+import javax.xml.transform.*;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.*;
+import org.knime.core.data.*;
+import org.knime.core.data.collection.CollectionDataValue;
+import org.knime.core.data.container.DataContainer;
+import org.knime.core.data.container.filter.TableFilter;
+import org.knime.core.node.*;
+import org.knime.core.node.extension.*;
+import org.knime.core.node.port.*;
+import org.knime.core.node.workflow.*;
+import org.knime.gateway.impl.project.ProjectManager;
+
+/** Native adapters over the same loaded project model as KNIME's canvas. */
+public final class CoreAccess {
+    private static final List<String> OPERATIONS=List.of("core.describe","core.snapshot","core.settings.get","core.settings.patch",
+        "core.execute","core.reset","core.cancel","core.table.read","core.port.inspect","core.port.export",
+        "core.nodes.search","core.nodes.details");
+    public static Object describe() {
+        ObjectNode out=BridgeActivator.JSON.valueToTree(Map.of("operations",OPERATIONS,"engine","live ProjectManager / WorkflowManager",
+            "portIndexing","native: implicit flow-variable port is normally index 0; first data port normally 1",
+            "longEncoding","decimal strings", "limits",Map.of("maxTableRows",1000,"maxSnapshotDepth",8,"maxSnapshotNodes",10000),
+            "limitations",List.of("Core changes do not create gateway undo entries", "Typed settings are node-specific; read before patching",
+                "Unknown cell types are explicit opaque display values", "Execution acknowledgement is not completion", "Opaque port objects require native export")));
+        ObjectNode contracts=out.putObject("contracts");
+        for(String op:OPERATIONS) {
+            ObjectNode contract=contracts.putObject(op);ObjectNode parameters=contract.putObject("parameters").put("type","object").put("additionalProperties",false);
+            ObjectNode props=parameters.putObject("properties");ArrayNode required=parameters.putArray("required");
+            boolean graph=!op.equals("core.describe")&&!op.startsWith("core.nodes.");
+            if(graph) {
+                required.add("projectId");property(props,"projectId","string","ID of an already loaded gateway project");
+                property(props,"workflowId","string","Optional full native workflow/component ID or relative ID; root by default");
+                property(props,"nodeId","string","Optional full native node ID or ID relative to workflowId; must be inside that workflow");
+            }
+            switch(op) {
+                case "core.describe" -> contract.put("description","Discover native operation contracts and limitations");
+                case "core.snapshot" -> {
+                    contract.put("description","Read the live node/workflow graph, messages, actions and port metadata");
+                    integerProperty(props,"depth",0,8,1);integerProperty(props,"maxNodes",1,10000,2000);
+                    property(props,"includeSettings","boolean","Include redacted typed settings envelopes").put("default",false);
+                }
+                case "core.settings.get" -> contract.put("description","Read the complete typed settings envelope; protected values are redacted");
+                case "core.settings.patch" -> {
+                    contract.put("description","Validate and apply typed edits to a detached full settings envelope; may reset downstream nodes");
+                    required.add("nodeId");required.add("patches");ObjectNode patches=props.putObject("patches").put("type","array").put("minItems",1).put("maxItems",1000);
+                    ObjectNode item=patches.putObject("items").put("type","object");item.putArray("required").add("path").add("value");ObjectNode fields=item.putObject("properties");
+                    ObjectNode path=fields.putObject("path").put("type","array").put("minItems",1).put("maxItems",64);
+                    path.putObject("items").put("type","string").put("minLength",1);
+                    property(fields,"type","string","Required for a new key; existing scalar types are inferred").putArray("enum")
+                        .add("xstring").add("xboolean").add("xbyte").add("xshort").add("xint").add("xlong").add("xfloat").add("xdouble").add("xchar")
+                        .add("stringArray").add("booleanArray").add("intArray").add("longArray").add("doubleArray");
+                    fields.putObject("value").put("description","Value must match type; use decimal strings for xlong/longArray; string null is distinct from empty; nonfinite floats use NaN/Infinity/-Infinity strings");
+                    property(fields,"createParents","boolean","Create missing config groups on this path before native validation").put("default",false);
+                    contract.put("protectedValues","Password, transient and secret/credential entries remain unchanged and cannot be edited");
+                }
+                case "core.execute", "core.reset", "core.cancel" -> contract.put("description","Native execution control; returns acceptance/current state, not verified completion. Poll core.snapshot.");
+                case "core.table.read" -> {
+                    contract.put("description","Page an executed table. Returns schema and rows of {key,values}; missing cells are null, long values/counts decimal strings");
+                    integerProperty(props,"portIndex",0,Integer.MAX_VALUE,1);integerProperty(props,"limit",1,1000,100);
+                    ObjectNode offset=props.putObject("offset").put("description","Nonnegative row offset; default 0");
+                    offset.putArray("anyOf").addObject().put("type","integer").put("minimum",0);
+                    ((ArrayNode)offset.get("anyOf")).addObject().put("type","string").put("pattern","^[0-9]+$");
+                    ObjectNode columns=props.putObject("columns").put("type","array").put("uniqueItems",true).put("maxItems",10000);
+                    ArrayNode choices=columns.putObject("items").putArray("anyOf");choices.addObject().put("type","string");choices.addObject().put("type","integer").put("minimum",0);
+                }
+                case "core.port.inspect", "core.port.export" -> {
+                    contract.put("description",op.endsWith("export")?"Export a native table or serializable port object to a new file":"Read output port metadata; never writes files");
+                    integerProperty(props,"portIndex",0,Integer.MAX_VALUE,0);
+                    if(op.endsWith("export")) {required.add("path");property(props,"path","string","Destination native port file; existing files are rejected; parent directory must exist");}
+                }
+                case "core.nodes.search" -> {
+                    property(props,"query","string","Case-insensitive name, factory, category or keyword substring").put("default","");
+                    integerProperty(props,"offset",0,Integer.MAX_VALUE,0);integerProperty(props,"limit",1,500,50);
+                    property(props,"includeHidden","boolean","Include hidden and deprecated installed nodes").put("default",false);
+                }
+                case "core.nodes.details" -> {required.add("factoryId");property(props,"factoryId","string","Exact installed factory ID returned by core.nodes.search");}
+                default -> { }
+            }
+        }
+        return out;
+    }
+    private static ObjectNode property(ObjectNode props,String key,String type,String description) {
+        return props.putObject(key).put("type",type).put("description",description);
+    }
+    private static void integerProperty(ObjectNode props,String key,int min,int max,int value) {
+        props.putObject(key).put("type","integer").put("minimum",min).put("maximum",max).put("default",value);
+    }
+    public static Object call(String operation,JsonNode args) throws Exception {
+        if(!args.isObject())throw new IllegalArgumentException("args must be an object");
+        validateArguments(operation,args);
+        return switch(operation) {
+            case "core.describe" -> describe();
+            case "core.nodes.search" -> search(args);
+            case "core.nodes.details" -> details(args);
+            case "core.snapshot" -> snapshot(args);
+            case "core.settings.get" -> settings(args,false);
+            case "core.settings.patch" -> settings(args,true);
+            case "core.execute", "core.reset", "core.cancel" -> execution(operation,args);
+            case "core.table.read" -> table(args);
+            case "core.port.inspect" -> port(args,false);
+            case "core.port.export" -> port(args,true);
+            default -> throw new IllegalArgumentException("Unknown core operation: "+operation);
+        };
+    }
+    private static void validateArguments(String operation,JsonNode args) {
+        JsonNode parameters=((JsonNode)describe()).path("contracts").path(operation).path("parameters");
+        if(parameters.isMissingNode())throw new IllegalArgumentException("Unknown core operation: "+operation);
+        JsonNode properties=parameters.path("properties");
+        for(Iterator<String> names=args.fieldNames();names.hasNext();) {
+            String name=names.next();JsonNode rule=properties.get(name);
+            if(rule==null) {
+                String hint=operation.equals("core.port.inspect")&&name.equals("path")?"; use core.port.export to write a file":"";
+                throw new IllegalArgumentException("Unknown argument for "+operation+": "+name+hint);
+            }
+            JsonNode value=args.get(name);String type=rule.path("type").asText();
+            boolean valid=switch(type) {
+                case "string" -> value.isTextual();
+                case "boolean" -> value.isBoolean();
+                case "integer" -> value.isIntegralNumber();
+                case "array" -> value.isArray();
+                default -> true; // Offset alternatives and typed values have dedicated validators.
+            };
+            if(!valid)throw new IllegalArgumentException(name+" must have type "+type+"; omit an optional argument instead of supplying null");
+            if(Set.of("projectId","workflowId","nodeId","factoryId","path").contains(name)&&value.asText().isBlank())
+                throw new IllegalArgumentException(name+" must be a nonempty string");
+        }
+        for(JsonNode field:parameters.path("required"))if(!args.has(field.asText()))
+            throw new IllegalArgumentException(field.asText()+" is required for "+operation);
+    }
+    private static WorkflowManager root(JsonNode args) {
+        String projectId=required(args,"projectId");
+        var project=ProjectManager.getInstance().getProject(projectId)
+            .orElseThrow(()->new IllegalArgumentException("Project not found: "+projectId));
+        return project.getWorkflowManagerIfLoaded()
+            .orElseThrow(()->new IllegalArgumentException("Project is not loaded: "+projectId));
+    }
+    private static String required(JsonNode args,String key) {
+        JsonNode value=args.path(key);
+        if(!value.isTextual()||value.asText().isBlank())throw new IllegalArgumentException(key+" must be a nonempty string");
+        return value.asText();
+    }
+    private static int bounded(JsonNode args,String key,int fallback,int min,int max) {
+        if(!args.has(key))return fallback;
+        JsonNode v=args.get(key);
+        if(!v.isIntegralNumber()||!v.canConvertToInt()||v.intValue()<min||v.intValue()>max)
+            throw new IllegalArgumentException(key+" must be an integer from "+min+" to "+max);
+        return v.intValue();
+    }
+    private static long offset(JsonNode args) {
+        JsonNode n=args.path("offset");if(n.isMissingNode())return 0;
+        if(!n.isIntegralNumber()&&!n.isTextual())throw new IllegalArgumentException("offset must be a nonnegative integer or decimal string");
+        try {long value=Long.parseLong(n.asText());if(value>=0)return value;}catch(NumberFormatException ignored){}
+        throw new IllegalArgumentException("offset must be a nonnegative integer within signed 64-bit range");
+    }
+    private static WorkflowManager nested(NodeContainer nc) {
+        if(nc instanceof WorkflowManager w)return w;
+        if(nc instanceof SubNodeContainer s)return s.getWorkflowManager();
+        return null;
+    }
+    private static String relative(WorkflowManager root,NodeID id) {
+        String prefix=root.getID().toString(),full=id.toString();
+        return full.equals(prefix)?"root":full.startsWith(prefix+":")?"root:"+full.substring(prefix.length()+1):full;
+    }
+    private static NodeContainer find(WorkflowManager root,String value) {
+        if(value.equals("root")||value.equals(root.getID().toString()))return root;
+        boolean absolute=value.startsWith("root:")||value.startsWith(root.getID()+":");
+        String full=value.startsWith("root:")?root.getID()+value.substring(4):value;
+        NodeContainer nc=findExact(root,full,0);
+        if(nc==null&&!absolute)nc=findExact(root,root.getID()+":"+value,0);
+        if(nc==null)throw new IllegalArgumentException("Node or workflow not found: "+value);
+        return nc;
+    }
+    private static NodeContainer findExact(WorkflowManager w,String id,int depth) {
+        if(depth>128)throw new IllegalArgumentException("Workflow nesting exceeds supported resolver depth");
+        if(w.getID().toString().equals(id))return w;
+        for(NodeContainer nc:w.getNodeContainers()) {
+            if(nc.getID().toString().equals(id))return nc;
+            WorkflowManager child=nested(nc);
+            if(child!=null) {NodeContainer found=findExact(child,id,depth+1);if(found!=null)return found;}
+        }
+        return null;
+    }
+    private static WorkflowManager selectedWorkflow(WorkflowManager root,JsonNode args) {
+        if(!args.hasNonNull("workflowId")||args.path("workflowId").asText().equals("root"))return root;
+        NodeContainer nc=find(root,required(args,"workflowId"));WorkflowManager w=nested(nc);
+        if(w==null)throw new IllegalArgumentException("workflowId does not identify a component or metanode");return w;
+    }
+    private static NodeContainer selectedNode(WorkflowManager root,JsonNode args) {
+        WorkflowManager w=selectedWorkflow(root,args);
+        if(!args.hasNonNull("nodeId"))return w;
+        String node=required(args,"nodeId");
+        // Gateway IDs are project-relative even when the caller scopes the lookup to a nested workflow.
+        String projectRootId=root.getID().toString();
+        boolean absolute=node.equals("root")||node.startsWith("root:")||node.equals(projectRootId)||node.startsWith(projectRootId+":");
+        if(absolute) {
+            String nativeId=node.equals("root")?projectRootId:node.startsWith("root:")?projectRootId+node.substring(4):node;
+            NodeContainer match=findExact(w,nativeId,0);
+            if(match==null)throw new IllegalArgumentException("Node or workflow not found inside selected workflow: "+node);
+            return match;
+        }
+        return find(w,node);
+    }
+    private static Object snapshot(JsonNode args) throws Exception {
+        WorkflowManager root=root(args);
+        int depth=bounded(args,"depth",1,0,8),maxNodes=bounded(args,"maxNodes",2000,1,10000);
+        try(var lock=root.lock()) {
+            NodeContainer selected=selectedNode(root,args);
+            ObjectNode result=nodeSummary(root,selected);
+            result.put("projectId",required(args,"projectId"));result.put("requestedDepth",depth);
+            WorkflowManager w=nested(selected);
+            if(w!=null)graph(root,w,result,depth,new int[]{maxNodes},args.path("includeSettings").asBoolean(false));
+            else if(args.path("includeSettings").asBoolean(false))addSettings(selected,result);
+            return result;
+        }
+    }
+    private static void graph(WorkflowManager root,WorkflowManager w,ObjectNode result,int depth,int[] remaining,boolean includeSettings)throws Exception {
+        result.put("workflowId",w.getID().toString());result.put("gatewayWorkflowId",relative(root,w.getID()));
+        ArrayNode nodes=result.putArray("nodes");
+        int omitted=0;
+        for(NodeContainer nc:w.getNodeContainers()) {
+            if(remaining[0]<=0){omitted++;continue;}remaining[0]--;
+            ObjectNode row=nodeSummary(root,nc);nodes.add(row);
+            if(includeSettings)addSettings(nc,row);
+            WorkflowManager child=nested(nc);
+            if(child!=null) {
+                row.put("nestedWorkflowId",child.getID().toString());
+                if(depth>0)graph(root,child,row.putObject("workflow"),depth-1,remaining,includeSettings);
+                else row.put("childrenTruncated",true).put("childNodeCount",child.getNodeContainers().size());
+            }
+        }
+        result.put("totalNodes",w.getNodeContainers().size()).put("omittedNodes",omitted).put("truncated",omitted>0);
+        ArrayNode connections=result.putArray("connections");
+        int count=0;
+        for(ConnectionContainer c:w.getConnectionContainers()) {
+            if(count++>=20000){result.put("connectionsTruncated",true);break;}
+            connections.addObject().put("id",c.getID().toString()).put("source",c.getSource().toString())
+                .put("sourcePort",c.getSourcePort()).put("destination",c.getDest().toString()).put("destinationPort",c.getDestPort())
+                .put("flowVariable",c.isFlowVariablePortConnection()).put("type",c.getType().toString());
+        }
+        ArrayNode annotations=result.putArray("annotations");
+        for(WorkflowAnnotation a:w.getWorkflowAnnotations())annotations.add(annotation(a).put("id",a.getID().toString()));
+    }
+    private static ObjectNode annotation(Annotation a) {
+        return BridgeActivator.JSON.createObjectNode().put("text",a.getText()).put("x",a.getX()).put("y",a.getY())
+            .put("width",a.getWidth()).put("height",a.getHeight()).put("contentType",String.valueOf(a.getContentType()));
+    }
+    private static ObjectNode nodeSummary(WorkflowManager root,NodeContainer nc) {
+        ObjectNode out=BridgeActivator.JSON.createObjectNode().put("id",nc.getID().toString()).put("gatewayId",relative(root,nc.getID()))
+            .put("name",nc.getName()).put("label",nc.getDisplayLabel()).put("customName",nc.getCustomName())
+            .put("state",nc.getNodeContainerState().toString()).put("dirty",nc.isDirty()).put("inactive",nc.isInactive())
+            .put("kind",nc instanceof SubNodeContainer?"component":nc instanceof WorkflowManager?"workflow":"native")
+            .put("hasDialog",nc.hasDialog()).put("settingsAvailable",true);
+        if(nc instanceof NativeNodeContainer n)out.put("factoryId",n.getNode().getFactory().getFactoryId());
+        if(nc.getUIInformation()!=null)out.set("bounds",BridgeActivator.JSON.valueToTree(nc.getUIInformation().getBounds()));
+        if(nc.getNodeAnnotation()!=null)out.set("annotation",annotation(nc.getNodeAnnotation()));
+        NodeMessage message=nc.getNodeMessage();
+        if(message!=null) {
+            ObjectNode m=out.putObject("message").put("type",message.getMessageType().toString()).put("text",message.getMessage());
+            message.getIssue().ifPresent(v->m.put("issue",v));m.set("resolutions",BridgeActivator.JSON.valueToTree(message.getResolutions()));
+            ObjectNode errors=m.putObject("childErrors");message.getChildErrors().forEach((id,error)->errors.put(id.toString(),error.toStringWithDetails()));
+        }
+        var monitor=nc.getProgressMonitor();
+        if(monitor!=null)out.putObject("progress").put("fraction",monitor.getProgress()).put("message",monitor.getMessage());
+        ArrayNode inputs=out.putArray("inputPorts"),outputs=out.putArray("outputPorts");
+        for(int i=0;i<nc.getNrInPorts();i++)inputs.add(portSummary(nc.getInPort(i)));
+        for(int i=0;i<nc.getNrOutPorts();i++)outputs.add(outputSummary(nc.getOutPort(i)));
+        WorkflowManager parent=nc.getParent();
+        if(nc instanceof WorkflowManager w)out.putObject("actions").put("execute",w.canExecuteAll()).put("reset",w.canResetAll()).put("cancel",w.canCancelAll());
+        else if(parent!=null)out.putObject("actions").put("execute",parent.canExecuteNode(nc.getID())).put("reset",parent.canResetNode(nc.getID())).put("cancel",parent.canCancelNode(nc.getID()));
+        return out;
+    }
+    private static ObjectNode portSummary(NodePort p) {
+        PortType type=p.getPortType();
+        return BridgeActivator.JSON.createObjectNode().put("index",p.getPortIndex()).put("name",p.getPortName())
+            .put("type",type.getName()).put("className",type.getPortObjectClass().getName())
+            .put("specClassName",type.getPortObjectSpecClass().getName()).put("optional",type.isOptional()).put("hidden",type.isHidden());
+    }
+    private static ObjectNode outputSummary(NodeOutPort p) {
+        ObjectNode out=portSummary(p);out.put("dataAvailable",p.getPortObject()!=null).put("specAvailable",p.getPortObjectSpec()!=null)
+            .put("inactive",p.isInactive()).put("summary",p.getPortSummary());
+        if(p.getPortObjectSpec() instanceof DataTableSpec spec)out.set("schema",schema(spec,null));return out;
+    }
+    private static void addSettings(NodeContainer nc,ObjectNode out) {
+        try {out.set("settings",SettingsCodec.encode(nc.getNodeSettings()));}
+        catch(Exception e){out.put("settingsAvailable",false).put("settingsError",e.getClass().getSimpleName());}
+    }
+    private static Object settings(JsonNode args,boolean patch) throws Exception {
+        WorkflowManager root=root(args);
+        try(var lock=root.lock()) {
+            NodeContainer nc=selectedNode(root,args);
+            NodeContext.pushContext(nc);
+            try {
+                NodeSettings settings=nc.getNodeSettings();
+                if(patch) {
+                    if(nc==root)throw new IllegalArgumentException("Patch an individual node, component, or metanode, not the project root");
+                    SettingsCodec.patch(settings,args.path("patches"));
+                    nc.getParent().loadNodeSettings(nc.getID(),settings);
+                    settings=nc.getNodeSettings();
+                }
+                ObjectNode result=BridgeActivator.JSON.createObjectNode().put("projectId",required(args,"projectId"))
+                    .put("nodeId",nc.getID().toString()).put("state",nc.getNodeContainerState().toString()).put("applied",patch);
+                result.set("settings",SettingsCodec.encode(settings));return result;
+            } finally {NodeContext.removeLastContext();}
+        }
+    }
+    private static Object execution(String operation,JsonNode args) throws Exception {
+        WorkflowManager root=root(args);
+        // Native execute methods only schedule jobs. Never await jobs while holding this lock.
+        try(var lock=root.lock()) {
+            NodeContainer nc=selectedNode(root,args);
+            NodeContext.pushContext(nc);
+            try {
+                WorkflowManager w=nc instanceof WorkflowManager workflow?workflow:null;
+                switch(operation) {
+                    case "core.execute" -> {if(w!=null){if(!w.canExecuteAll())throw new IllegalStateException("Workflow cannot execute in its current state");w.executeAll();}
+                        else {if(!nc.getParent().canExecuteNode(nc.getID()))throw new IllegalStateException("Node cannot execute in its current state");nc.getParent().executeUpToHere(nc.getID());}}
+                    case "core.reset" -> {if(w!=null){if(!w.canResetAll())throw new IllegalStateException("Workflow cannot reset in its current state");w.resetAndConfigureAll();}
+                        else {if(!nc.getParent().canResetNode(nc.getID()))throw new IllegalStateException("Node cannot reset in its current state");nc.getParent().resetAndConfigureNode(nc.getID());}}
+                    case "core.cancel" -> {if(w!=null)w.cancelExecution();else nc.getParent().cancelExecution(nc);}
+                    default -> throw new IllegalArgumentException("Unsupported execution operation");
+                }
+                return BridgeActivator.JSON.createObjectNode().put("accepted",true).put("operation",operation)
+                    .put("projectId",required(args,"projectId")).put("nodeId",nc.getID().toString())
+                    .put("state",nc.getNodeContainerState().toString()).put("completionVerified",false);
+            } finally {NodeContext.removeLastContext();}
+        }
+    }
+    private static NodeOutPort output(NodeContainer nc,JsonNode args,int defaultIndex) {
+        int index=bounded(args,"portIndex",defaultIndex,0,Integer.MAX_VALUE);
+        if(index>=nc.getNrOutPorts())throw new IllegalArgumentException("Output port index outside node range: "+index);
+        return nc.getOutPort(index);
+    }
+    private static Object port(JsonNode args,boolean export) throws Exception {
+        if(!export&&args.has("path"))throw new IllegalArgumentException("core.port.inspect is read-only; use core.port.export to write a file");
+        WorkflowManager root=root(args);
+        try(var lock=root.lock()) {
+            NodeContainer nc=selectedNode(root,args);NodeOutPort p=output(nc,args,0);
+            ObjectNode out=outputSummary(p).put("nodeId",nc.getID().toString());PortObject po=p.getPortObject();
+            if(po!=null)out.put("objectClass",po.getClass().getName()).put("table",po instanceof BufferedDataTable);
+            if(po instanceof BufferedDataTable table)out.put("totalRows",Long.toString(table.size()));
+            if(export) {
+                if(po==null)throw new IllegalStateException("Output data is unavailable; execute the node first");
+                String name=po.getClass().getName().toLowerCase(Locale.ROOT);
+                if(name.contains("credential")||name.contains("secret"))throw new IllegalArgumentException("Credential port objects cannot be exported through this adapter");
+                if(!(po instanceof BufferedDataTable) && (PortTypeRegistry.getInstance().getObjectSerializer(po.getClass()).isEmpty()
+                    || PortTypeRegistry.getInstance().getSpecSerializer(po.getSpec().getClass()).isEmpty()))
+                    throw new UnsupportedOperationException("No native serializer is registered for this port object/spec");
+                Path path=Path.of(required(args,"path")).toAbsolutePath().normalize();
+                if(Files.exists(path))throw new FileAlreadyExistsException(path.toString());
+                Path temporary=Files.createTempFile(path.getParent(),".knime-agent-export-",".partial");
+                NodeContext.pushContext(nc);
+                try {
+                    try(var stream=Files.newOutputStream(temporary,StandardOpenOption.WRITE,StandardOpenOption.TRUNCATE_EXISTING)) {
+                        if(po instanceof BufferedDataTable table)DataContainer.writeToStream(table,stream,new ExecutionMonitor());
+                        else PortUtil.writeObjectToStream(po,stream,new ExecutionMonitor());
+                    }
+                    // A move without REPLACE_EXISTING retains no-overwrite semantics, including races.
+                    Files.move(temporary,path);
+                } finally {NodeContext.removeLastContext();Files.deleteIfExists(temporary);}
+                out.put("exportPath",path.toString()).put("exportBytes",Long.toString(Files.size(path)))
+                    .put("exportFormat",po instanceof BufferedDataTable?"knime-table":"knime-port-object");
+            }
+            return out;
+        }
+    }
+    private static ArrayNode schema(DataTableSpec spec,int[] selected) {
+        ArrayNode out=BridgeActivator.JSON.createArrayNode();
+        int[] columns=selected==null?java.util.stream.IntStream.range(0,spec.getNumColumns()).toArray():selected;
+        for(int index:columns) {
+            DataColumnSpec col=spec.getColumnSpec(index);DataType type=col.getType();
+            out.addObject().put("index",index).put("name",col.getName()).put("type",type.toString())
+                .put("cellClass",type.getCellClass().getName()).put("preferredValueClass",type.getPreferredValueClass().getName())
+                .put("collection",type.isCollectionType()).put("encoding",type.isCompatible(IntValue.class)?"number":type.isCompatible(LongValue.class)?"decimal-string":type.isCompatible(DoubleValue.class)?"number-or-special-string":type.isCompatible(BooleanValue.class)?"boolean":type.isCompatible(StringValue.class)?"string":type.isCollectionType()?"array":"opaque");
+        }
+        return out;
+    }
+    private static Object table(JsonNode args) throws Exception {
+        WorkflowManager root=root(args);long offset=offset(args);int limit=bounded(args,"limit",100,1,1000);
+        try(var lock=root.lock()) {
+            NodeContainer nc=selectedNode(root,args);NodeOutPort port=output(nc,args,1);
+            if(!(port.getPortObject() instanceof BufferedDataTable table))throw new IllegalStateException("Selected output does not contain an executed BufferedDataTable");
+            DataTableSpec spec=table.getDataTableSpec();int[] columns;
+            if(args.has("columns")) {
+                JsonNode a=args.get("columns");if(!a.isArray()||a.size()>10000)throw new IllegalArgumentException("columns must be an array of names or indices");
+                columns=new int[a.size()];Set<Integer> seen=new HashSet<>();
+                for(int i=0;i<a.size();i++) {
+                    JsonNode col=a.get(i);int index;
+                    if(col.isTextual())index=spec.findColumnIndex(col.asText());
+                    else if(col.isIntegralNumber()&&col.canConvertToInt())index=col.intValue();
+                    else throw new IllegalArgumentException("Column selectors must be names or integer indices");
+                    if(index<0||index>=spec.getNumColumns())throw new IllegalArgumentException("Unknown or out-of-range column: "+col);
+                    if(!seen.add(index))throw new IllegalArgumentException("Duplicate selected column: "+col);columns[i]=index;
+                }
+            } else columns=java.util.stream.IntStream.range(0,spec.getNumColumns()).toArray();
+            long total=table.size();ObjectNode out=BridgeActivator.JSON.createObjectNode().put("nodeId",nc.getID().toString())
+                .put("portIndex",port.getPortIndex()).put("offset",Long.toString(offset)).put("limit",limit).put("totalRows",Long.toString(total));
+            out.set("schema",schema(spec,columns));ArrayNode rows=out.putArray("rows");
+            if(offset<total) {
+                long end=offset+Math.min((long)limit,total-offset)-1;
+                TableFilter filter=new TableFilter.Builder().withFromRowIndex(offset).withToRowIndex(end).withMaterializeColumnIndices(columns).build();
+                try(var iterator=table.filter(filter).iterator()) {
+                    while(iterator.hasNext()&&rows.size()<limit) {
+                        DataRow row=iterator.next();ObjectNode r=rows.addObject().put("key",row.getKey().getString());ArrayNode values=r.putArray("values");
+                        for(int col:columns)values.add(cell(row.getCell(col),0));
+                    }
+                }
+            }
+            long next=offset+rows.size();out.put("hasMore",next<total).put("nextOffset",Long.toString(next));return out;
+        }
+    }
+    private static JsonNode cell(DataCell cell,int depth) {
+        if(cell.isMissing())return NullNode.instance;
+        if(cell instanceof BooleanValue value)return BooleanNode.valueOf(value.getBooleanValue());
+        if(cell instanceof IntValue value)return IntNode.valueOf(value.getIntValue());
+        if(cell instanceof LongValue value)return TextNode.valueOf(Long.toString(value.getLongValue()));
+        if(cell instanceof DoubleValue value) {double d=value.getDoubleValue();return Double.isFinite(d)?DoubleNode.valueOf(d):TextNode.valueOf(Double.toString(d));}
+        if(cell instanceof StringValue value)return TextNode.valueOf(value.getStringValue());
+        if(cell instanceof CollectionDataValue value&&depth<8) {
+            ArrayNode array=BridgeActivator.JSON.createArrayNode();int count=0;
+            for(DataCell child:value) {if(count++>=10000)return BridgeActivator.JSON.createObjectNode().put("opaque",true).put("type",cell.getClass().getName()).put("reason","Collection exceeds 10000 items");array.add(cell(child,depth+1));}return array;
+        }
+        String display=cell.toString();boolean truncated=display.length()>4096;if(truncated)display=display.substring(0,4096);
+        return BridgeActivator.JSON.createObjectNode().put("opaque",true).put("type",cell.getClass().getName()).put("display",display).put("truncated",truncated);
+    }
+    private static Object search(JsonNode args) {
+        String query=args.path("query").asText("").toLowerCase(Locale.ROOT);int limit=bounded(args,"limit",50,1,500),offset=bounded(args,"offset",0,0,Integer.MAX_VALUE);
+        var provider=NodeSpecCollectionProvider.getInstance();var specs=args.path("includeHidden").asBoolean(false)?provider.getNodes():provider.getActiveNodes();
+        if(specs==null)throw new IllegalStateException("Installed node discovery was interrupted");
+        List<NodeSpec> matches=specs.values().stream().filter(s->(s.metadata().nodeName()+" "+s.factory().id()+" "+s.metadata().categoryPath()+" "+String.join(" ",s.metadata().keywords())).toLowerCase(Locale.ROOT).contains(query))
+            .sorted(Comparator.comparing((NodeSpec s)->s.metadata().nodeName()).thenComparing(s->s.factory().id())).toList();
+        ObjectNode out=BridgeActivator.JSON.createObjectNode().put("total",matches.size()).put("offset",offset).put("limit",limit)
+            .put("hasMore",(long)offset+limit<matches.size());ArrayNode nodes=out.putArray("nodes");
+        for(int i=offset;i<matches.size()&&i<(long)offset+limit;i++)nodes.add(specSummary(matches.get(i),false));return out;
+    }
+    private static Object details(JsonNode args)throws Exception {
+        String factoryId=required(args,"factoryId");NodeSpec spec=NodeSpecCollectionProvider.getInstance().getNodes().get(factoryId);
+        if(spec==null)throw new IllegalArgumentException("Installed factory not found: "+factoryId);
+        ObjectNode out=specSummary(spec,true);
+        try {
+            var factory=NodeFactoryProvider.getInstance().getInitializedNodeFactory(spec).orElseThrow();
+            var element=factory.getXMLDescription();StringWriter writer=new StringWriter();
+            Transformer transformer=TransformerFactory.newInstance().newTransformer();transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION,"yes");
+            transformer.transform(new DOMSource(element),new StreamResult(writer));out.put("descriptionXml",writer.toString());
+        }catch(Exception e){out.put("descriptionUnavailable",e.getClass().getSimpleName());}
+        return out;
+    }
+    private static ObjectNode specSummary(NodeSpec spec,boolean detailed) {
+        ObjectNode out=BridgeActivator.JSON.createObjectNode().put("factoryId",spec.factory().id()).put("factoryClass",spec.factory().className())
+            .put("name",spec.metadata().nodeName()).put("categoryPath",spec.metadata().categoryPath()).put("type",spec.type().toString())
+            .put("deprecated",spec.deprecated()).put("hidden",spec.hidden());
+        if(detailed) {
+            out.set("keywords",BridgeActivator.JSON.valueToTree(spec.metadata().keywords()));
+            ArrayNode input=out.putArray("inputPorts"),output=out.putArray("outputPorts");
+            for(NodeSpec.Ports.Port p:spec.ports().inputPorts())input.add(repositoryPort(p));
+            for(NodeSpec.Ports.Port p:spec.ports().outputPorts())output.add(repositoryPort(p));
+            out.put("configuration","Read core.settings.get from an instantiated node; settings depend on node and input data");
+        }
+        return out;
+    }
+    private static ObjectNode repositoryPort(NodeSpec.Ports.Port p) {
+        return BridgeActivator.JSON.createObjectNode().put("index",p.index()).put("nativeIndex",p.index()+1)
+            .put("name",p.name()).put("description",p.description()).put("type",p.type().getName())
+            .put("className",p.type().getPortObjectClass());
+    }
+}

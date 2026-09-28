@@ -1,0 +1,11 @@
+node_modules/
+build/
+runtime/
+research/
+.superpowers/
+*.log
+.env
+.env.*
+artifacts/*.jar
+artifacts/*.zip
+artifacts/*.sha256

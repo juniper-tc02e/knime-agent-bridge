@@ -1,0 +1,23 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: KNIME Agent Bridge
+Bundle-SymbolicName: org.knime.agent.bridge
+Bundle-Version: 0.1.0.beta1
+Bundle-Activator: org.knime.agent.BridgeActivator
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Require-Bundle: org.eclipse.core.runtime,
+ org.eclipse.ui.workbench,
+ org.eclipse.swt,
+ org.knime.core,
+ org.knime.core.util,
+ org.knime.gateway.api,
+ org.knime.gateway.impl,
+ org.knime.gateway.impl.jsonrpc,
+ org.knime.gateway.json,
+ com.github.briandilley.jsonrpc4j,
+ org.knime.ui.java,
+ com.fasterxml.jackson.core.jackson-databind,
+ com.fasterxml.jackson.core.jackson-core,
+ com.fasterxml.jackson.core.jackson-annotations
+Import-Package: org.osgi.framework
+
