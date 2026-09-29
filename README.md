@@ -4,7 +4,7 @@
 
 Inspect workflows and node settings, edit native graphs, run nodes, read outputs, and save projects from a local AI client. MCP is the agent interface; the CLI uses the same native bridge for scripts and diagnosis.
 
-**Current package: 0.3.0.** Independent integration; not an official KNIME product. No Business Hub subscription or hosted bridge is required. AI-client and external workflow-service costs are separate.
+**Current package: 0.3.1.** Independent integration; not an official KNIME product. No Business Hub subscription or hosted bridge is required. AI-client and external workflow-service costs are separate.
 
 v0.2 adds bound workflow contexts, durable operation receipts, native canvas preview images, readable crops, curved-wire/text checks, constrained layout plans, and separate completion evidence. Viewport capture and geometry coverage have explicit limits; consult the verification receipt. The reliability update adds model-settings validation before execution/save, Windows journal recovery, readable load warnings with guarded actions, effective session status, and the read-only knime_wait helper (18 tools).
 
@@ -30,7 +30,7 @@ Wait for KNIME readiness before connecting. v0.2 canvas rendering also needs the
 
 | Release | Focus |
 |---|---|
-| [v0.3](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.3.0) | Settings reliability, Windows recovery, readable load warnings and completion polling |
+| [v0.3](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.3.1) | Settings reliability, Windows recovery, readable load warnings and completion polling |
 | [v0.1 beta](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.1.0-beta.1) | Native workflow editing, configuration, execution and output inspection |
 | [v0.2 beta](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.2.0-beta.1) | Canvas visibility, layout checks and guarded quality workflow |
 

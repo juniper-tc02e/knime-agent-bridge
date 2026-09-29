@@ -1,6 +1,16 @@
 # v0.3 verification receipt
 
-Release: `0.3.0`, 29 September 2026. Windows 11, KNIME Analytics Platform `5.12.0.v202606180846`, modern UI; Java 21 target, Node 24.15 and JDK 24 used locally. Full native acceptance: **137 passed, 0 failed, cancelled or skipped**.
+Current release: `0.3.1`, 29 September 2026. Windows 11, KNIME Analytics Platform `5.12.0.v202606180846`, modern UI; Java 21 target, Node 24.15 and JDK 24 used locally. Full native acceptance: **139 passed, 0 failed, cancelled or skipped**.
+
+## v0.3.1 restart-readiness correction
+
+The final local restart check after publishing v0.3.0 exposed one additional issue: KNIME's application state can contain restored tabs whose native workflow models are not loaded. The open wait formerly accepted the tab alone. v0.3.1 requires a successful native snapshot of the exact matched project before returning `settled`.
+
+Two regressions first failed, then passed after the correction. A real restored tab reproduced the false `settled` result before the fix and returned `timeout` with `completed:false` after it. Unrelated native errors remain visible; no mutation is replayed.
+
+Full v0.3.1 suite: **139/139**, zero failures, cancellations or skips, **141.036 seconds**, plus fixture bootstrap. The native visual result was inspected again. Tested bundle: `org.knime.agent.bridge_0.3.1-15a0bc0c133b.jar`, SHA-256 `be703131122f9e63db356e662303ba60767e4e1201aeb9b9280dae0920c7f0b7`; live health matches. Local log: `runtime/v031-verification/full-suite.log`.
+
+v0.3.0 remains available as historical release evidence. The following table records its initial 137-test acceptance; every case was included again in the 139-test corrective run.
 
 ## Fixed behavior
 
@@ -24,7 +34,7 @@ The earlier canvas image, curved-wire/text checks, constrained layout edits, dat
 | Prior review defects | Semantic capture freshness, changed scope during assessment and cross-task evidence contamination regressions passed |
 | Independent review | No material or release-blocking finding; reviewer separately ran 30 focused tests, all passing |
 
-Tested immutable bundle: `org.knime.agent.bridge_0.3.0-a3ef6e3bdec3.jar`.
+Original v0.3.0 tested immutable bundle: `org.knime.agent.bridge_0.3.0-a3ef6e3bdec3.jar`.
 SHA-256: `0c55f945ce606ae6900095e66a2c5554c498afb5ae94a6e6f0572f2a31571f85`.
 Live health reported this exact fingerprint. Local acceptance log: `runtime/v03-verification/full-suite.log` (excluded from distribution).
 

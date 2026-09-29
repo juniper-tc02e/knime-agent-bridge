@@ -20,7 +20,17 @@ export async function waitForCondition(client,{session,condition,projectId,workf
     const state=await read('gateway.call',{method:'ApplicationService.getState',params:{}});if(!state)break;
     if(!Array.isArray(state.openProjects))throw new BridgeError('INVALID_RESPONSE','Application state lacks openProjects.');
     observation=condition==='opened'?state.openProjects.find(p=>p.origin?.providerId===origin.providerId&&p.origin?.spaceId===origin.spaceId&&p.origin?.itemId===origin.itemId)??null:state.openProjects.find(p=>p.projectId===projectId)??null;
-    if(condition==='opened'?observation!==null:observation===null)return result('settled');
+    if(condition==='closed'&&observation===null)return result('settled');
+    if(condition==='opened'&&observation!==null) {
+     if(typeof observation.projectId!=='string'||!observation.projectId)throw new BridgeError('INVALID_RESPONSE','Opened project lacks projectId.');
+     try {
+      const native=await read('core.snapshot',{projectId:observation.projectId,depth:0});
+      if(native)return result('settled');
+     }catch(error){
+      // The application can restore a tab before its native workflow is loaded.
+      if(error.code!=='INVALID_ARGUMENT'||!error.message.startsWith('Project is not loaded:'))throw error;
+     }
+    }
    } else {
     observation=await read('core.snapshot',{projectId,...(workflowId?{workflowId}:{}),...(nodeId?{nodeId}:{})});if(!observation)break;
     if(condition==='saved'&&observation.dirty===false)return result('settled',{note:'Clean live state observed. Reopen/export verification is still required.'});

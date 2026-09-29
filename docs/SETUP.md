@@ -27,8 +27,8 @@ C:\Tools\knime-agent-bridge-v02\knime-agent-bridge
 Compare the downloaded archive hash with the published checksum:
 
 ```powershell
-Get-FileHash "$env:USERPROFILE\Downloads\knime-agent-bridge-0.3.0.zip" -Algorithm SHA256
-Get-Content "$env:USERPROFILE\Downloads\knime-agent-bridge-0.3.0.zip.sha256"
+Get-FileHash "$env:USERPROFILE\Downloads\knime-agent-bridge-0.3.1.zip" -Algorithm SHA256
+Get-Content "$env:USERPROFILE\Downloads\knime-agent-bridge-0.3.1.zip.sha256"
 ```
 
 Use `0.1.0-beta.1` or `0.2.0-beta.1` in those filenames for an older release.

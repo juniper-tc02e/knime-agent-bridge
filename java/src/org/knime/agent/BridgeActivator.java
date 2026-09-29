@@ -14,7 +14,7 @@ import org.eclipse.ui.PlatformUI;
 /** A local, per-process command queue. No sockets, account tokens, or remote services. */
 public final class BridgeActivator implements BundleActivator {
     static final ObjectMapper JSON = new ObjectMapper();
-    static final String VERSION = "0.3.0";
+    static final String VERSION = "0.3.1";
     private final String id = UUID.randomUUID().toString();
     private final String startedAt = Instant.now().toString();
     private ScheduledExecutorService heartbeat;

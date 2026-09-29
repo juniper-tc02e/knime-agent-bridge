@@ -254,7 +254,7 @@ Acknowledging a warning does not repair its node. Inspect the loaded graph and `
 
 ## Waiting and operation records (beta.2)
 
-`knime_wait` polls a specific session for `execution`, `saved`, `opened` or `closed`. Open waits require the exact `{providerId,spaceId,itemId}` origin; close waits require the original project ID. It returns on the observed condition, a blocking modal, an execution error or timeout. It never repeats the native command. A clean-save condition is not a reopen/round-trip certificate.
+`knime_wait` polls a specific session for `execution`, `saved`, `opened` or `closed`. Open waits require the exact `{providerId,spaceId,itemId}` origin and a successful native snapshot of that project's loaded model; a restored tab alone is insufficient. Close waits require the original project ID. It returns on the observed condition, a blocking modal, an execution error or timeout. It never repeats the native command. A clean-save condition is not a reopen/round-trip certificate.
 
 Operation receipts expose `nativeDispatch` (`not_started`, `started`, `returned` or `started_outcome_unknown`). This describes dispatch, not completion of asynchronous work. Metadata write retries are bounded and never retry KNIME actions. Full immutable receipt events are authoritative if Windows delays replacing the aggregate `.json`; `knime_operation` reads the newest event even when the aggregate is missing/stale. A failed final journal write reports its uncertainty and retains the original native result/error details.
 
