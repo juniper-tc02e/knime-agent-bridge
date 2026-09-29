@@ -14,11 +14,12 @@ import org.knime.ui.java.api.DesktopAPI;
 
 /** Narrow desktop adapter; KNIME remains responsible for each callback's threading. */
 final class DesktopAccess {
-    Object call(String operation,JsonNode args) {
+    Object call(String operation,JsonNode args)throws Exception {
         return switch(operation) {
             case "desktop.describe" -> describe();
             case "desktop.functions" -> functions();
             case "desktop.uiState" -> uiState();
+            case "desktop.dialogAction", "desktop.dismissDialog" -> dismissDialog(args);
             case "desktop.openProject" -> openProject(args);
             case "desktop.saveProject" -> saveProject(args);
             case "desktop.closeProject" -> closeProject(args);
@@ -29,7 +30,10 @@ final class DesktopAccess {
         return Map.of("operations",List.of(
             Map.of("operation","desktop.describe","parameters",List.of(),"readOnly",true),
             Map.of("operation","desktop.functions","parameters",List.of(),"readOnly",true,"description","Lists installed callback names; only allowlisted operations can be invoked"),
-            Map.of("operation","desktop.uiState","parameters",List.of(),"readOnly",true,"description","Bounded read of desktop responsiveness and visible modal shell titles"),
+            Map.of("operation","desktop.uiState","parameters",List.of(),"readOnly",true,"description","Bounded modal text, tree items and controlled acknowledgement actions with identity/fingerprint"),
+            Map.of("operation","desktop.dialogAction","parameters",List.of(
+                Map.of("name","dialogId","type","string","required",true),Map.of("name","fingerprint","type","string","required",true),Map.of("name","actionId","type","string","required",true)),
+                "readOnly",false,"restriction","Only an unchanged inspected Workflow Load warning: reveal Details, then re-inspect and acknowledge OK. Never arbitrary dialogs/progress cancellation. desktop.dismissDialog is an alias."),
             Map.of("operation","desktop.openProject","parameters",List.of(
                 Map.of("name","spaceId","type","string","required",true),
                 Map.of("name","itemId","type","string","required",true),
@@ -62,7 +66,7 @@ final class DesktopAccess {
         });
         return Map.of("functions",result,"modernUiReady",DesktopAPI.areDependenciesInjected(),"scope","Callback discovery does not enable arbitrary callback invocation");
     }
-    private static Object saveProject(JsonNode args) {
+    private static Object saveProject(JsonNode args)throws Exception {
         String projectId=text(args,"projectId");
         if(!DesktopAPI.areDependenciesInjected()) throw new IllegalStateException("KNIME's modern UI is not initialized; open it first");
         requireUnblockedUi();
@@ -72,6 +76,8 @@ final class DesktopAccess {
             throw new IllegalArgumentException("desktop.saveProject supports verified local projects only. Saving a remote project can upload or overwrite remote content.");
         }
         if(project.getWorkflowManagerIfLoaded().isEmpty()) throw new IllegalArgumentException("Project is not loaded: "+projectId);
+        var workflow=project.getWorkflowManagerIfLoaded().orElseThrow();
+        try(var lock=workflow.lock()){OperationPolicy.apply();SettingsHealth.requireValid(workflow,false);}
         Consumer<Object[]> callback=callbacks().get("saveProject");
         if(callback==null) throw new IllegalStateException("This KNIME version does not expose saveProject");
         boolean dirty=Boolean.TRUE.equals(projects.getDirtyProjectsMap().get(projectId));
@@ -151,12 +157,24 @@ final class DesktopAccess {
             if(shell.isDisposed()) continue;
             boolean modal=(shell.getStyle() & (SWT.PRIMARY_MODAL|SWT.APPLICATION_MODAL|SWT.SYSTEM_MODAL))!=0;
             boolean visible=shell.getVisible();
-            shells.add(Map.of("title",shell.getText(),"visible",visible,"enabled",shell.getEnabled(),"modal",modal));
+            try{shells.add(DesktopDialogs.inspect(shell));}
+            catch(Exception error){shells.add(Map.of("title",shell.getText(),"visible",visible,"modal",modal,"inspectionError",error.getClass().getSimpleName()));}
             if(visible && modal) blockingTitles.add(shell.getText());
         }
         Shell active=display.getActiveShell();
         return Map.of("workbenchRunning",true,"responsive",true,"blocked",!blockingTitles.isEmpty(),
             "blockingShells",blockingTitles,"activeShellTitle",active==null?"":active.getText(),"shells",shells);
+    }
+
+    private static Object dismissDialog(JsonNode args)throws Exception {
+        Display display=PlatformUI.getWorkbench().getDisplay();
+        if(Display.getCurrent()==display)return DesktopDialogs.dismiss(display,args);
+        CompletableFuture<Object> result=new CompletableFuture<>();
+        display.asyncExec(()->{if(result.isDone())return;try{result.complete(DesktopDialogs.dismiss(display,args));}catch(Throwable failure){result.completeExceptionally(failure);}});
+        try{return result.get(2000,TimeUnit.MILLISECONDS);}
+        catch(java.util.concurrent.ExecutionException failure){if(failure.getCause() instanceof Exception cause)throw cause;throw failure;}
+        catch(java.util.concurrent.TimeoutException failure){result.cancel(false);throw new IllegalStateException("Dialog acknowledgement outcome is unknown; inspect desktop.uiState before retrying",failure);}
+        catch(InterruptedException failure){result.cancel(false);Thread.currentThread().interrupt();throw failure;}
     }
 
     private static void requireUnblockedUi() {

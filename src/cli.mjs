@@ -7,7 +7,7 @@ import { BridgeClient, BridgeError } from './client.mjs';
 import { dispatchTool, errorPayload } from './catalog.mjs';
 import {IMAGES} from './mcp-result.mjs';
 
-export const VERSION = '0.2.0-beta.1';
+export const VERSION = '0.3.0';
 const HELP = `KNIME Agent Bridge ${VERSION}
 
 Usage: knime-agent <command> [arguments] [options]

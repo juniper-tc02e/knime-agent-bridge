@@ -1,6 +1,6 @@
 {
   "name": "knime-agent-bridge",
-  "version": "0.2.0-beta.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Local live KNIME agent bridge: shared IPC client, CLI and MCP server",

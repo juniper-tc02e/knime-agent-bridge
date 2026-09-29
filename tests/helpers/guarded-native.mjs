@@ -2,7 +2,7 @@
 // Conflict/missing-precondition tests deliberately use the raw transport instead.
 export function needsGuard(operation,args) {
  if(operation==='gateway.call')return !/\.(?:get|list|search|find|has|is|describe)/.test(args.method??'');
- return /^(?:core\.(?:settings\.patch|execute|reset|cancel|port\.export)|desktop\.(?:openProject|saveProject|closeProject)|layout\.apply)$/.test(operation);
+ return /^(?:core\.(?:settings\.patch|execute|reset|cancel|port\.export)|desktop\.(?:openProject|saveProject|closeProject|dismissDialog)|layout\.apply)$/.test(operation);
 }
 export function targetArgs(operation,args) {
  const value=operation==='gateway.call'?args.params:args;

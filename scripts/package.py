@@ -9,7 +9,7 @@ root = Path(__file__).resolve().parent.parent
 metadata = json.loads((root / "package.json").read_text(encoding="utf-8"))
 latest = json.loads((root / "artifacts/latest.json").read_text(encoding="utf-8"))
 bundle = latest["bundle"]
-if not re.fullmatch(r"org\.knime\.agent\.bridge_0\.2\.0\.beta1-[0-9a-f]{12}\.jar", bundle):
+if not re.fullmatch(r"org\.knime\.agent\.bridge_0\.3\.0-[0-9a-f]{12}\.jar", bundle):
     raise ValueError("Build a versioned bridge bundle before packaging.")
 
 files = [root / name for name in [

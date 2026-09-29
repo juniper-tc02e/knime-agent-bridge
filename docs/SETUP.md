@@ -27,11 +27,13 @@ C:\Tools\knime-agent-bridge-v02\knime-agent-bridge
 Compare the downloaded archive hash with the published checksum:
 
 ```powershell
-Get-FileHash "$env:USERPROFILE\Downloads\knime-agent-bridge-0.2.0-beta.1.zip" -Algorithm SHA256
-Get-Content "$env:USERPROFILE\Downloads\knime-agent-bridge-0.2.0-beta.1.zip.sha256"
+Get-FileHash "$env:USERPROFILE\Downloads\knime-agent-bridge-0.3.0.zip" -Algorithm SHA256
+Get-Content "$env:USERPROFILE\Downloads\knime-agent-bridge-0.3.0.zip.sha256"
 ```
 
-Use `0.1.0-beta.1` in those filenames for the older release.
+Use `0.1.0-beta.1` or `0.2.0-beta.1` in those filenames for an older release.
+
+v0.3 includes the previously local beta.2 reliability fixes. Read [the v0.3 verification receipt](VERIFICATION-0.3.md). Save and close the KNIME instance being upgraded before relaunching; new bridge code cannot replace a JAR already loaded in KNIME. Start a fresh MCP client connection to discover all 18 tools.
 
 ## 3. Install the JavaScript dependencies
 

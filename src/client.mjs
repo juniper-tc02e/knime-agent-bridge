@@ -70,7 +70,15 @@ export class BridgeClient {
       try {
         const metadata = JSON.parse(await readFile(path.join(root, entry.name, 'session.json'), 'utf8'));
         const reason = unavailableReason(metadata, entry.name, this.staleMs);
-        return { ...(object(metadata) ? metadata : {}), id: entry.name, alive: reason === null, ...(reason ? { reason } : {}) };
+        const reportedStatus=object(metadata)?metadata.status:undefined;
+        let effectiveStatus=reason===null?'ready':reportedStatus==='stopped'?'stopped':'unavailable';
+        if(reason) {
+          if(Number.isSafeInteger(metadata?.pid)&&metadata.pid>0) {
+            try {process.kill(metadata.pid,0);if(/Heartbeat is stale/.test(reason))effectiveStatus='stale';else if(reportedStatus==='starting')effectiveStatus='starting';}
+            catch(error){if(error.code==='ESRCH')effectiveStatus='dead';}
+          }
+        }
+        return { ...(object(metadata) ? metadata : {}), id: entry.name, reportedStatus, status:effectiveStatus,effectiveStatus,alive: reason === null, ...(reason ? { reason } : {}) };
       } catch (error) {
         return { id: entry.name, alive: false, reason: `Invalid or unreadable session metadata: ${error.message}` };
       }

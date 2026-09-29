@@ -230,3 +230,32 @@ For a supplemental core adapter, obtain the already-loaded manager through `Proj
 - [Native workflow service](https://github.com/knime-oss/knime-gateway/blob/releases/STS/org.knime.gateway.impl/src/eclipse/org/knime/gateway/impl/webui/service/DefaultWorkflowService.java)
 - [Generated client and entity definitions](https://github.com/knime-oss/knime-ui/blob/releases/STS/org.knime.ui.js/src/api/gateway-api/generated-api.ts)
 - [Shared workflow event listener implementation](https://github.com/knime-oss/knime-gateway/blob/releases/STS/org.knime.gateway.impl/src/eclipse/org/knime/gateway/impl/webui/service/events/WorkflowChangedEventSource.java)
+
+## Copy and paste without changing the payload
+
+`CopyCommandEnt` returns an opaque `content` string. Keep it byte-for-byte as returned; a JSON-quoted-looking string is still the native clipboard envelope. Do not call `JSON.parse(copy.content)` or wrap it in another `JSON.stringify` before paste.
+
+```js
+const copied = await command({
+  kind: 'copy', nodeIds: [nodeId], annotationIds: [], connectionBendpoints: {}
+});
+await command({kind: 'paste', content: copied.content, position: {x: 500, y: 200}});
+```
+
+These examples assume the usual bound-context gateway helper. Inspect installed command schemas before changing fields. `core.execute` uses singular `nodeId`; `NodeService.changeNodeStates` accepts `nodeIds`; output reads use `portIndex`. These APIs deliberately do not silently coerce misspelled targets.
+
+## Load warning recovery (beta.2)
+
+`desktop.uiState` returns bounded native modal labels, read-only text, instantiated tree/table/list items, button labels, stable dialog/action IDs, a content fingerprint, and truncation/coverage information. Editable text and password fields are omitted. Embedded browser/custom dialog content can remain unavailable.
+
+For an observed **Workflow Load** warning only, `desktop.dialogAction` accepts `{dialogId,fingerprint,actionId}` with a normal context precondition. The adapter rechecks the exact visible dialog before dispatching a supported button event. If `detailsCollapsed:true`, only `reveal-load-details` is offered: invoke it, inspect again, then use the new fingerprint and `acknowledge-load-warning` action. Old fingerprints, unknown dialogs and unlisted actions are rejected. `desktop.dismissDialog` is an alias. There is no generic click, destructive confirmation, credentials submission or progress-cancel action.
+
+Acknowledging a warning does not repair its node. Inspect the loaded graph and `settingsValidation`, then repair through typed settings. Save/execute guards still reject known invalid settings. A UI action timeout is an unknown outcome; inspect again before deciding on another action.
+
+## Waiting and operation records (beta.2)
+
+`knime_wait` polls a specific session for `execution`, `saved`, `opened` or `closed`. Open waits require the exact `{providerId,spaceId,itemId}` origin; close waits require the original project ID. It returns on the observed condition, a blocking modal, an execution error or timeout. It never repeats the native command. A clean-save condition is not a reopen/round-trip certificate.
+
+Operation receipts expose `nativeDispatch` (`not_started`, `started`, `returned` or `started_outcome_unknown`). This describes dispatch, not completion of asynchronous work. Metadata write retries are bounded and never retry KNIME actions. Full immutable receipt events are authoritative if Windows delays replacing the aggregate `.json`; `knime_operation` reads the newest event even when the aggregate is missing/stale. A failed final journal write reports its uncertainty and retains the original native result/error details.
+
+Session listings expose both the descriptor's `reportedStatus` and the current effective `status`/`effectiveStatus`. A dead process with an old ready descriptor is shown as `dead`, and a live process with an expired heartbeat as `stale`.

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BridgeError } from './client.mjs';
 import {v02Tools,preconditionSchema,noteMutation} from './v02-tools.mjs';
+import {waitForCondition} from './wait.mjs';
 
 const session = z.string().min(1).optional().describe('Explicit live session ID from knime_sessions. Required when multiple KNIME instances are running.');
 const timeoutMs = z.number().int().min(1).max(3600000).optional().describe('Response timeout in milliseconds (default 30000). Timeout never cancels or retries the operation; inspect state before retrying.');
@@ -88,6 +89,12 @@ export const toolCatalog = [
     },
   },
   ...v02Tools,
+  {
+    name:'knime_wait',title:'Wait for an observed KNIME condition',
+    description:'Bounded read-only wait for execution, project open/close, or clean save state. Explicit session required. Stops on a blocking dialog and never retries the mutation. Clean state does not verify a saved artifact.',
+    inputSchema:{session:z.string().min(1),condition:z.enum(['execution','saved','opened','closed']),projectId:z.string().min(1).optional(),workflowId:z.string().min(1).optional(),nodeId:z.string().min(1).optional(),origin:z.object({providerId:z.string().min(1),spaceId:z.string().min(1),itemId:z.string().min(1)}).strict().optional(),timeoutMs:z.number().int().min(1).max(60000).optional()},
+    annotations:readOnly,run:waitForCondition,
+  },
 ];
 
 export const operationGuide = {
@@ -106,13 +113,16 @@ export const operationGuide = {
     'Use read-only knime_nodes to search the installed active node catalogue before adding a node. Configuration support depends on the actual node implementation; report unsupported or opaque settings instead of inventing them.',
   ],
   mutations: [
+    'Inspect settingsValidation after adding/configuring a node. Configured/executed state does not prove model settings serialize and validate. Incomplete settings must be repaired before execution or save; do not edit loaded workflow XML.',
+    'knime_wait observes execution, open/close or clean-save conditions without repeating the operation. Its saved condition is not saved-artifact verification. Use desktop.uiState for bounded warning text; desktop.dialogAction reveals Details then acknowledges only an unchanged observed Workflow Load warning. Re-inspect after revealing details.',
+    'For copy/paste, pass the exact copy.content string unchanged to paste.content; do not JSON.parse or stringify it again. core.execute uses nodeId, NodeService.changeNodeStates uses nodeIds, and knime_table uses portIndex.',
     'For canvas work, use knime_canvas_view before and after editing. Run knime_layout_check, then actually inspect readable images and required tiles. A generated image, executed node, or clean graph alone does not establish visual completion. Preserve instructional group membership by supplying groups/pins to layout planning; geometric clearance does not understand annotation meaning.',
     'Use knime_verify_workflow to retain requested scope and evidence-specific review. Report functional, visual and persistence statuses separately. Viewport synchronization, list-marker geometry, nested fidelity and unsupported output checks may remain incomplete. Do not conceal those gaps with a blanket done claim.',
     'Use native or gateway operations on the live model; do not edit the XML of an open workflow behind KNIME.',
     'After an edit, re-read the graph/settings and validate the resulting state. After execution, inspect completion, node errors, output schema and sample rows. Saving alone does not establish successful execution.',
     'In Desktop mode, save local workflows with knime_desktop_call {operation:"desktop.saveProject",args:{projectId}} and poll the root workflow until dirty is false. WorkflowService.saveProject is ineffective in Desktop and the bridge rejects it. Verify saved results by closing/reopening when persistence matters.',
     'Gateway services and node execution can access network, credentials or paid services, including Kai and Hub. Do not invoke these services merely to gather context. Obtain authorization for external actions, charges and destructive operations.',
-    'Requests carry expiresAt so a compatible bridge can reject expired work that has not started. A client timeout still means unknown outcome: running work may complete. Do not retry automatically; inspect knime_operation using operationId/sessionId from the error. Layout wrapper receipts contain native operation IDs in progress; reconcile those exact IDs.',
+    'Requests carry expiresAt so a compatible bridge can reject expired work that has not started. A client timeout still means unknown outcome: running work may complete. Do not retry automatically; inspect knime_operation using operationId/sessionId from the error and nativeDispatch. Full immutable receipt events remain authoritative if a Windows lock delays the aggregate JSON. Layout wrapper receipts contain native operation IDs in progress; reconcile those exact IDs.',
   ],
   limits: 'KNIME gateway APIs are internal and version-specific. A discoverable method is not evidence every node family or third-party extension has been verified. Use the packaged capability matrix for beta acceptance evidence.',
 };

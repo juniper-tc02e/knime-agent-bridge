@@ -21,6 +21,7 @@ export async function integritySnapshot(context,{tableOutputs=[],mode='full',pag
     for(const c of n.connections??[]) structure.push({connection:fields(c,['id','source','destination','destinationPort','type','flowVariable','sourceNodeId','targetNodeId','sourcePort','targetPort','sourceNode','destNode','destPort','sourcePortIndex','destPortIndex'])});
     if(n.id)executionStates[n.id]=n.state??'unknown';
     if(n.factoryId && n.settings===undefined)settingsComplete=false;
+    if(n.settingsAvailable===false||n.settingsValidation?.validForSave===false&&n.factoryId)settingsComplete=false;
     if(n.settings!==undefined){configuration.push({id:n.id??null,settings:n.settings});if(hasMarker(n.settings,v=>v.redacted===true||v.protected===true))protectedSettings=true;}
     if(n.variables!==undefined)configuration.push({id:n.id??null,variables:n.variables});
     layout.push({id:n.id??null,...fields(n,['name','label','position','bounds','annotation']),annotations:n.annotations??[],connections:(n.connections??[]).map(c=>fields(c,['id','bendpoints','bendPoints']))});

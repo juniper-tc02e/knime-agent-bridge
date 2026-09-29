@@ -52,6 +52,19 @@ final class GatewayAccess {
         JsonNode params=args.get("params");
         if(params==null) params=BridgeActivator.JSON.createObjectNode();
         if(!(params.isArray() || params.isObject())) throw new IllegalArgumentException("params must be an array or object");
+        if(name.equals("NodeService.changeNodeStates")&&params.path("action").asText().toLowerCase(Locale.ROOT).startsWith("execute")) {
+            var root=NativeTarget.root(params);
+            try(var lock=root.lock()) {
+                OperationPolicy.apply();JsonNode ids=params.path("nodeIds");
+                if(!ids.isArray())throw new IllegalArgumentException("nodeIds must be an array for NodeService.changeNodeStates; core.execute uses singular nodeId");
+                if(ids.isEmpty())SettingsHealth.requireValid(NativeTarget.workflow(root,params),true);
+                else for(JsonNode id:ids) {
+                    ObjectNode target=BridgeActivator.JSON.createObjectNode().put("projectId",NativeTarget.required(params,"projectId"));
+                    if(params.has("workflowId"))target.set("workflowId",params.get("workflowId"));target.set("nodeId",id);
+                    SettingsHealth.requireValid(NativeTarget.node(root,target),true);
+                }
+            }
+        }
         ObjectNode request=BridgeActivator.JSON.createObjectNode().put("jsonrpc","2.0")
             .put("id",UUID.randomUUID().toString()).put("method",name);
         request.set("params",params);

@@ -124,7 +124,7 @@ public final class CoreAccess {
         for(Iterator<String> names=args.fieldNames();names.hasNext();) {
             String name=names.next();JsonNode rule=properties.get(name);
             if(rule==null) {
-                String hint=operation.equals("core.port.inspect")&&name.equals("path")?"; use core.port.export to write a file":"";
+                String hint=operation.equals("core.port.inspect")&&name.equals("path")?"; use core.port.export to write a file":name.equals("nodeIds")?"; core operations use singular nodeId; nodeIds belongs to NodeService.changeNodeStates":name.equals("port")?"; use portIndex":"";
                 throw new IllegalArgumentException("Unknown argument for "+operation+": "+name+hint);
             }
             JsonNode value=args.get(name);String type=rule.path("type").asText();
@@ -214,7 +214,11 @@ public final class CoreAccess {
             .put("state",nc.getNodeContainerState().toString()).put("dirty",nc.isDirty()).put("inactive",nc.isInactive())
             .put("kind",nc instanceof SubNodeContainer?"component":nc instanceof WorkflowManager?"workflow":"native")
             .put("hasDialog",nc.hasDialog()).put("settingsAvailable",true);
-        if(nc instanceof NativeNodeContainer n)out.put("factoryId",n.getNode().getFactory().getFactoryId());
+        if(nc instanceof NativeNodeContainer n) {
+            out.put("factoryId",n.getNode().getFactory().getFactoryId());
+            try {var settings=SettingsHealth.read(nc);out.set("settingsValidation",settings.validation());out.put("settingsAvailable",!settings.validation().path("serialization").asText().equals("failed"));}
+            catch(Exception failure){out.put("settingsAvailable",false).put("settingsError",failure.getClass().getSimpleName());}
+        }
         if(nc.getUIInformation()!=null)out.set("bounds",BridgeActivator.JSON.valueToTree(nc.getUIInformation().getBounds()));
         if(nc.getNodeAnnotation()!=null)out.set("annotation",annotation(nc.getNodeAnnotation()));
         NodeMessage message=nc.getNodeMessage();
@@ -246,7 +250,7 @@ public final class CoreAccess {
         if(p.getPortObject() instanceof BufferedDataTable table)out.put("tableIdentity",tableIdentity(table));return out;
     }
     private static void addSettings(NodeContainer nc,ObjectNode out) {
-        try {out.set("settings",SettingsCodec.encode(nc.getNodeSettings()));}
+        try {SettingsHealth.Snapshot settings=SettingsHealth.read(nc);out.set("settings",SettingsCodec.encode(settings.settings()));out.set("settingsValidation",settings.validation());out.put("settingsAvailable",!settings.validation().path("serialization").asText().equals("failed"));}
         catch(Exception e){out.put("settingsAvailable",false).put("settingsError",e.getClass().getSimpleName());}
     }
     private static Object settings(JsonNode args,boolean patch) throws Exception {
@@ -255,17 +259,17 @@ public final class CoreAccess {
             NodeContainer nc=selectedNode(root,args);
             NodeContext.pushContext(nc);
             try {
-                NodeSettings settings=nc.getNodeSettings();
+                SettingsHealth.Snapshot inspected=SettingsHealth.read(nc);NodeSettings settings=inspected.settings();
                 if(patch) {
                     OperationPolicy.apply();
                     if(nc==root)throw new IllegalArgumentException("Patch an individual node, component, or metanode, not the project root");
                     SettingsCodec.patch(settings,args.path("patches"));
                     nc.getParent().loadNodeSettings(nc.getID(),settings);
-                    settings=nc.getNodeSettings();
+                    inspected=SettingsHealth.read(nc);settings=inspected.settings();
                 }
                 ObjectNode result=BridgeActivator.JSON.createObjectNode().put("projectId",required(args,"projectId"))
                     .put("nodeId",nc.getID().toString()).put("state",nc.getNodeContainerState().toString()).put("applied",patch);
-                result.set("settings",SettingsCodec.encode(settings));return result;
+                result.set("settings",SettingsCodec.encode(settings));result.set("settingsValidation",inspected.validation());return result;
             } finally {NodeContext.removeLastContext();}
         }
     }
@@ -279,7 +283,7 @@ public final class CoreAccess {
                 WorkflowManager w=nc instanceof WorkflowManager workflow?workflow:null;
                 OperationPolicy.apply();
                 switch(operation) {
-                    case "core.execute" -> {if(w!=null){if(!w.canExecuteAll())throw new IllegalStateException("Workflow cannot execute in its current state");w.executeAll();}
+                    case "core.execute" -> {SettingsHealth.requireValid(nc,true);if(w!=null){if(!w.canExecuteAll())throw new IllegalStateException("Workflow cannot execute in its current state");w.executeAll();}
                         else {if(!nc.getParent().canExecuteNode(nc.getID()))throw new IllegalStateException("Node cannot execute in its current state");nc.getParent().executeUpToHere(nc.getID());}}
                     case "core.reset" -> {if(w!=null){if(!w.canResetAll())throw new IllegalStateException("Workflow cannot reset in its current state");w.resetAndConfigureAll();}
                         else {if(!nc.getParent().canResetNode(nc.getID()))throw new IllegalStateException("Node cannot reset in its current state");nc.getParent().resetAndConfigureNode(nc.getID());}}

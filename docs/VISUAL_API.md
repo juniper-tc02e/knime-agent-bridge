@@ -1,6 +1,6 @@
 # v0.2 canvas and context API
 
-The local MCP server exposes 17 tools. The original 10 discovery, workflow, settings, data and advanced native tools remain, with context/revision preconditions for v0.2 mutations. Seven tools add context binding, canvas images, layout checks/plans/application, operation lookup and quality evidence.
+The local MCP server exposes 18 tools in beta.2 (17 in beta.1). The original 10 discovery, workflow, settings, data and advanced native tools remain, with context/revision preconditions for v0.2 mutations. Seven tools add context binding, canvas images, layout checks/plans/application, operation lookup and quality evidence; beta.2 adds the read-only `knime_wait` observer.
 
 ## Bind before editing
 

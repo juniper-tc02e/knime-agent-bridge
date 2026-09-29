@@ -14,7 +14,7 @@ import org.eclipse.ui.PlatformUI;
 /** A local, per-process command queue. No sockets, account tokens, or remote services. */
 public final class BridgeActivator implements BundleActivator {
     static final ObjectMapper JSON = new ObjectMapper();
-    static final String VERSION = "0.2.0-beta.1";
+    static final String VERSION = "0.3.0";
     private final String id = UUID.randomUUID().toString();
     private final String startedAt = Instant.now().toString();
     private ScheduledExecutorService heartbeat;
@@ -71,10 +71,7 @@ public final class BridgeActivator implements BundleActivator {
     }
     private void writeMetadata(String status)throws Exception {atomicWrite(session.resolve("session.json"),metadata(status));}
     static void atomicWrite(Path path,JsonNode value)throws Exception {
-        Path tmp=path.resolveSibling(path.getFileName()+".tmp");
-        Files.write(tmp,JSON.writeValueAsBytes(value));
-        try {Files.move(tmp,path,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);}
-        catch(AtomicMoveNotSupportedException e){Files.move(tmp,path,StandardCopyOption.REPLACE_EXISTING);}
+        AtomicFiles.write(path,JSON.writeValueAsBytes(value));
     }
     private void poll() {
         if(!ready)return;
@@ -107,7 +104,7 @@ public final class BridgeActivator implements BundleActivator {
             else try {jobs.execute(()->execute(claimed,request,response,receipt));}
             catch(RejectedExecutionException e){throw new IllegalStateException("Native job queue is full (64); request not dispatched",e);}
             return;
-        }catch(Throwable e){error(response,e);}
+        }catch(Throwable e){error(response,e);((ObjectNode)response.path("error").path("details")).put("nativeDispatch","not_started");}
         publish(claimed,response);
     }
     private static ObjectNode cleanArgs(JsonNode args) {
@@ -115,6 +112,7 @@ public final class BridgeActivator implements BundleActivator {
     }
     private void execute(Path claimed,JsonNode request,ObjectNode response,ObjectNode receipt) {
         String operation=request.path("operation").asText();JsonNode args=request.path("args");String contextId=request.path("precondition").path("contextId").asText(args.path("contextId").asText());
+        boolean dispatched=false;
         try {
             if(receipt!=null)operations.transition(receipt,"running");
             if(request.hasNonNull("expiresAt")&&Instant.parse(request.get("expiresAt").asText()).isBefore(Instant.now()))throw new ContextAccess.Conflict("REQUEST_EXPIRED","Request expired in queue before execution; no operation was performed");
@@ -124,6 +122,8 @@ public final class BridgeActivator implements BundleActivator {
                 OperationPolicy.enter(contexts,request.path("precondition"),operation,args);
                 if(receipt!=null)receipt.set("beforeRevisions",contexts.inspect(contextId).path("revisions"));
             }
+            if(receipt!=null){receipt.put("nativeDispatch","started");operations.transition(receipt,"dispatching");}
+            dispatched=true;
             Object result=switch(operation) {
                 case "health" -> metadata("ready");
                 case "context.bind" -> contexts.bind(args);
@@ -141,14 +141,35 @@ public final class BridgeActivator implements BundleActivator {
                 }
             };
             response.put("ok",true);response.set("result",JSON.valueToTree(result));
-        }catch(Throwable e){error(response,e);}
+            if(receipt!=null)receipt.put("nativeDispatch","returned");
+        }catch(Throwable e){error(response,e);
+            ObjectNode details=(ObjectNode)response.path("error").path("details");
+            if(!details.has("nativeDispatch"))details.put("nativeDispatch",dispatched?"started_outcome_unknown":"not_started");
+            if(receipt!=null)receipt.set("nativeDispatch",details.path("nativeDispatch"));
+        }
         finally {OperationPolicy.leave();}
         if(receipt!=null)try {
             JsonNode after=null;
             if(!contextId.isBlank())try{after=contexts.inspect(contextId).path("revisions");}catch(Exception ignored){}
             operations.finish(receipt,response,after);
-        }catch(Exception e){error(response,new IllegalStateException("Operation outcome journal update failed; do not replay",e));}
+        }catch(Exception e){
+            JsonNode nativeError=response.path("error").deepCopy();boolean returned=response.path("ok").asBoolean();
+            error(response,new IllegalStateException("Operation outcome journal update failed; do not replay",e));
+            ObjectNode details=(ObjectNode)response.path("error").path("details");
+            details.put("nativeDispatch",receipt.path("nativeDispatch").asText()).put("nativeReturnedSuccessfully",returned).put("journalStatus","outcome_not_persisted");
+            if(returned&&response.has("result"))preserveNativeResult(details,response.get("result"));
+            if(!nativeError.isMissingNode())details.set("nativeError",nativeError);
+            response.set("receipt",receipt.deepCopy().put("journalStatus","outcome_not_persisted"));
+        }
         publish(claimed,response);
+    }
+    static void preserveNativeResult(ObjectNode details,JsonNode result) {
+        try {
+            byte[] bytes=JSON.writeValueAsBytes(result);
+            details.put("nativeResultBytes",bytes.length);
+            if(bytes.length<=64*1024)details.set("nativeResult",result.deepCopy());
+            else details.put("nativeResultOmitted","Result exceeds 64 KiB; inspect the target before any retry").put("nativeResultSha256",RevisionTracker.bytesDigest(bytes));
+        }catch(Exception failure){details.put("nativeResultOmitted","Result could not be encoded; inspect the target before any retry");}
     }
     private void error(ObjectNode response,Throwable e) {
         response.put("ok",false);ObjectNode error=response.putObject("error");

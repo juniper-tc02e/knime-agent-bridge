@@ -24,6 +24,10 @@ Snapshots read live state. They do not promise consistency with a previous reque
 
 `core.settings.get` takes shared arguments selecting a node and returns `{projectId,nodeId,state,applied:false,settings}`. The settings view preserves the native envelope:
 
+Starting with `0.2.0-beta.2`, it also returns `settingsValidation`: serialization/validation status, `validForSave`, the model settings source and bounded error details. Native snapshots expose this status even without `includeSettings`. A node can be `CONFIGURED` or `EXECUTED` while its settings are incomplete. Native execution and desktop save reject detected invalid settings with `NODE_SETTINGS_INVALID` and `nativeDispatch:"not_started"`. This checks model settings; custom view settings and exact saved-file reopen behavior still need separate verification.
+
+The KNIME 5.12 adapter reads the stored envelope and invokes the protected model serializer directly only when defaults must be generated. This observes errors that KNIME's public wrapper otherwise logs and swallows. Failed serialization returns partial typed settings for an explicit repair; it does not mark the node valid or repeatedly emit the same KNIME error through revision polling. Complete all missing fields in a typed patch, then re-read validation. No model-specific defaults are silently invented.
+
 ```json
 {
   "key": "node_settings",
@@ -62,6 +66,8 @@ Edits are applied to the detached full `getNodeSettings()` envelope. KNIME's `lo
 `core.execute`, `core.reset`, and `core.cancel` take shared graph arguments. Execute schedules the selected node and dependencies, or the whole selected workflow. Reset resets and reconfigures the selection and affected successors. Cancel requests cancellation. The return value includes `accepted`, current `state`, and `completionVerified:false`.
 
 Poll `core.snapshot` for resulting states/messages; an accepted command does not establish successful execution. Workflows with external side effects must be authorised by the caller before execution.
+
+The MCP/CLI tool `knime_wait` can perform this bounded polling. Supply the explicit `session`, `condition:"execution"`, `projectId`, and optional `workflowId`/`nodeId`. It returns `settled`, `failed`, `blocked` or `timeout`; it never executes, retries or cancels a command. `timeoutMs` is bounded to 60 seconds. A `saved` wait checks the root dirty flag and explicitly returns `persistenceVerified:false`.
 
 ## Tables and ports
 

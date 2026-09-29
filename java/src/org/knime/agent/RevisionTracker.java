@@ -52,7 +52,7 @@ final class RevisionTracker {
             for(int p=0;p<n.getNrOutPorts();p++)portTypes.add(n.getOutPort(p).getPortType().getPortObjectClass().getName());
             ObjectNode configuration=((ArrayNode)inputs.get("configuration")).addObject().put("id",id);
             // SettingsCodec never exposes/hashes password or transient values.
-            try {configuration.set("settings",SettingsCodec.encode(n.getNodeSettings()));}
+            try {SettingsHealth.Snapshot settings=SettingsHealth.read(n);configuration.set("settings",SettingsCodec.encode(settings.settings()));configuration.set("settingsValidation",settings.validation());}
             catch(Exception e){configuration.put("unavailable",e.getClass().getName());}
             ObjectNode layout=((ArrayNode)inputs.get("layout")).addObject().put("id",id).put("name",n.getName())
                 .put("label",n.getDisplayLabel()).put("customName",n.getCustomName());

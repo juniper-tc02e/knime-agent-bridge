@@ -40,3 +40,13 @@ test('malformed operation identity and preconditions are rejected before submiss
   await assert.rejects(f.client.call('layout.apply',{}, {precondition:{contextId:'x',expected:[],extra:1}}),{code:'INVALID_ARGUMENT'});
   assert.deepEqual(await fs.readdir(path.join(f.dir,'requests')),[]);
 });
+
+test('dead and stale descriptors retain reported status but expose an effective unavailable status',async t=>{
+ const f=await setup(t);
+ const metadata={id:'A',pid:2147483647,heartbeat:new Date().toISOString(),status:'ready'};
+ await fs.writeFile(path.join(f.dir,'session.json'),JSON.stringify(metadata));
+ const dead=(await f.client.listSessions())[0];assert.equal(dead.reportedStatus,'ready');assert.equal(dead.status,'dead');assert.equal(dead.effectiveStatus,'dead');assert.equal(dead.alive,false);
+ metadata.pid=process.pid;metadata.heartbeat=new Date(Date.now()-100000).toISOString();
+ await fs.writeFile(path.join(f.dir,'session.json'),JSON.stringify(metadata));
+ const stale=(await f.client.listSessions())[0];assert.equal(stale.effectiveStatus,'stale');assert.equal(stale.alive,false);
+});

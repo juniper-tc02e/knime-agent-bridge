@@ -48,3 +48,9 @@ test('native core source/destination port topology and native bounds enter their
   const before=await integritySnapshot({},options,f.deps);f.state.connections[0].destination='0:3';const rewired=await integritySnapshot({},options,f.deps);
   assert.notEqual(before.structureDigest,rewired.structureDigest);f.state.nodes[0].bounds[0]=44;const moved=await integritySnapshot({},options,f.deps);assert.notEqual(rewired.layoutDigest,moved.layoutDigest);
 });
+
+test('partial or invalid serialized settings cannot earn complete configuration coverage',async()=>{
+ const {state:graph}=fixture();const invalid={...graph,nodes:graph.nodes.map(n=>({...n,settingsValidation:{validForSave:false,serialization:'failed'},settingsAvailable:false}))};
+ const result=await integritySnapshot({}, {}, {readSnapshot:async()=>invalid});
+ assert.equal(result.coverage.configuration,'incomplete');
+});

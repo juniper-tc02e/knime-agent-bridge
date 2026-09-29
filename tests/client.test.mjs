@@ -147,7 +147,7 @@ test('CLI help/version work without KNIME and invalid flags fail with JSON diagn
   assert.match(help.stdout, /sessions/);
   const version = await cli(['--version']);
   assert.equal(version.code, 0);
-  assert.match(version.stdout, /^0\.2\.0-beta\.1/);
+  assert.match(version.stdout, /^0\.3\.0/);
   const error = await cli(['health', '--surprise']);
   assert.equal(error.code, 1);
   assert.equal(error.stdout, '');
