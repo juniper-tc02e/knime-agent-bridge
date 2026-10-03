@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: KNIME Agent Bridge
 Bundle-SymbolicName: org.knime.agent.bridge
-Bundle-Version: 0.3.1
+Bundle-Version: 0.4.0
 Bundle-Activator: org.knime.agent.BridgeActivator
 Bundle-RequiredExecutionEnvironment: JavaSE-21
 Require-Bundle: org.eclipse.core.runtime,
@@ -20,4 +20,3 @@ Require-Bundle: org.eclipse.core.runtime,
  com.fasterxml.jackson.core.jackson-core,
  com.fasterxml.jackson.core.jackson-annotations
 Import-Package: org.osgi.framework
-

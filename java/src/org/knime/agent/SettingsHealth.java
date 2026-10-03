@@ -56,6 +56,28 @@ final class SettingsHealth {
             return new Snapshot(envelope,health);
         } finally {NodeContext.removeLastContext();}
     }
+    /** Validate a detached candidate using the native validation-only dispatch. Never loads settings. */
+    static ObjectNode validate(NodeContainer container,NodeSettings candidate) {
+        ObjectNode health=BridgeActivator.JSON.createObjectNode().put("serialization","not_checked").put("validation","not_checked")
+            .put("validForSave",false).put("modelSettingsSource","detached-candidate")
+            .put("coverage",container instanceof NativeNodeContainer?"native-common-envelope-and-model-validation; detached serialization":"native-common-envelope-validation only; child settings unknown");
+        try {
+            // The bytes stay in memory and are discarded; protected native values are not returned.
+            candidate.saveToXML(java.io.OutputStream.nullOutputStream());health.put("serialization","passed");
+        } catch(Exception error) {health.put("serialization","failed");issue(health,"serializationError",error);}
+        NodeContext.pushContext(container);
+        try {
+            // Reflection invokes the actual container's override (SingleNodeContainer for native nodes).
+            // In the pinned KNIME build this parses common settings and calls validateModelSettings.
+            invoke(method(NodeContainer.class,"validateSettings",NodeSettingsRO.class),container,candidate);
+            health.put("validation","passed");
+        } catch(Exception error) {health.put("validation","failed");issue(health,"validationError",error);}
+        finally {NodeContext.removeLastContext();}
+        health.put("validForSave",container instanceof NativeNodeContainer&&health.path("serialization").asText().equals("passed")
+            &&health.path("validation").asText().equals("passed"));
+        health.put("viewValidation","not_checked").put("effectiveFlowVariableSettings","unknown").put("savedReopen","not_checked");
+        return health;
+    }
     private static void issue(ObjectNode out,String name,Exception error) {
         String message=Objects.toString(error.getMessage(),error.getClass().getSimpleName());
         out.putObject(name).put("exception",error.getClass().getName()).put("message",message.substring(0,Math.min(1200,message.length())));

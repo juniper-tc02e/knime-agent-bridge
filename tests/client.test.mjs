@@ -147,7 +147,7 @@ test('CLI help/version work without KNIME and invalid flags fail with JSON diagn
   assert.match(help.stdout, /sessions/);
   const version = await cli(['--version']);
   assert.equal(version.code, 0);
-  assert.match(version.stdout, /^0\.3\.1/);
+  assert.equal(version.stdout.trim(), JSON.parse(await readFile(path.join(project, 'package.json'), 'utf8')).version);
   const error = await cli(['health', '--surprise']);
   assert.equal(error.code, 1);
   assert.equal(error.stdout, '');
@@ -208,7 +208,7 @@ test('CLI sessions honors runtime environment and reports absent runtime without
   assert.equal(JSON.parse(result.stdout).sessions[0].id, 'knime-test');
   const absent = await cli(['sessions', '--runtime', path.join(f.runtime, 'absent')]);
   assert.equal(absent.code, 0);
-  assert.deepEqual(JSON.parse(absent.stdout), { sessions: [] });
+  assert.deepEqual(JSON.parse(absent.stdout), { runtime: path.join(f.runtime, 'absent'), sessions: [] });
 });
 
 test('CLI rejects mixed argument formats and invalid JSON without creating a request', async t => {

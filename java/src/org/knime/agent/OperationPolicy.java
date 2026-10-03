@@ -6,8 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /** Exact native guards. Unknown expert gateway actions remain visibly unverified. */
 final class OperationPolicy {
-    private static final Set<String> READS=Set.of("health","context.bind","context.inspect","operation.get","canvas.preview","canvas.viewport","canvas.capabilities",
-        "gateway.describe","core.describe","core.snapshot","core.settings.get","core.table.read","core.port.inspect","core.nodes.search","core.nodes.details",
+    private static final Set<String> READS=Set.of("health","context.bind","context.inspect","context.usage","context.release","context.prune","dependency.inspect","operation.get","canvas.preview","canvas.viewport","canvas.capabilities",
+        "gateway.describe","core.describe","core.snapshot","core.settings.get","core.settings.preview","core.table.read","core.port.inspect","core.nodes.search","core.nodes.details",
         "desktop.describe","desktop.functions","desktop.uiState");
     private static final Set<String> GATEWAY_READS=Set.of("ApplicationService.getState","WorkflowService.getWorkflow","WorkflowService.getWorkflowMonitorState",
         "WorkflowService.getNode","WorkflowService.getWorkflowInfo","WorkflowService.getWorkflowPortInfo","WorkflowService.getWorkflowBounds",

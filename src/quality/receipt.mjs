@@ -32,7 +32,7 @@ export class QualityManager {
   manifest(taskId) {
     const base=this.store.get(taskId);if(base.recordKind!=='quality-task')throw new Error('Unknown quality task.');
     const manifest=structuredClone(base);
-    const events=this.store.list().filter(e=>e.taskId===taskId&&['task-change','task-respecification'].includes(e.recordKind)).sort((a,b)=>a.scopeRevision-b.scopeRevision);
+    const events=[...this.store.list('task-change'),...this.store.list('task-respecification')].filter(e=>e.taskId===taskId).sort((a,b)=>a.scopeRevision-b.scopeRevision||a.recordedAt.localeCompare(b.recordedAt)||a.id.localeCompare(b.id));
     for(const event of events){manifest.scopeRevision=event.scopeRevision;if(event.recordKind==='task-change'){manifest.changedScopes=unique([...manifest.changedScopes,event.scopeId]);manifest.requiredDimensions=unique([...manifest.requiredDimensions,...event.dimensions]);manifest.contextIds=unique([...manifest.contextIds,event.contextId]);if(event.uncertain)manifest.uncertainScopes=unique([...manifest.uncertainScopes,event.scopeId]);}else {if(event.requestedScopes)manifest.requestedScopes=event.requestedScopes;if(event.requiredDimensions)manifest.requiredDimensions=event.requiredDimensions;manifest.exceptions.push(...event.exceptions);}}
     return immutable(manifest);
   }

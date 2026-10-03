@@ -16,7 +16,7 @@ test('real MCP sees and repairs node-on-instruction layout while retaining execu
  const core=(operation,args)=>invoke('knime_core_call',{operation,args});
  const until=async(fn)=>{for(let i=0;i<100;i++){const r=await fn();if(r)return r;await new Promise(r=>setTimeout(r,100));}throw new Error('Native postcondition timed out');};
  try {
-  const health=await raw('knime_health');assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace/);assert.match(health.bridgeVersion,/^0\.3\./);
+  const health=await raw('knime_health');assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace/);assert.match(health.bridgeVersion,/^0\.4\./);
   const item=await gateway('SpaceService.createWorkflow',{spaceProviderId:'local',spaceId:'local',itemId:'root',itemName:'Visual Beta '+Date.now()});
   await invoke('knime_desktop_call',{operation:'desktop.openProject',args:{spaceProviderId:'local',spaceId:'local',itemId:item.id}});
   const project=await until(async()=>(await gateway('ApplicationService.getState')).openProjects.find(p=>p.origin?.itemId===item.id));

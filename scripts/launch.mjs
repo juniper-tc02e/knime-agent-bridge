@@ -123,15 +123,16 @@ export async function launchKnime({ argv = process.argv.slice(2), env = process.
       if (!fields[2].startsWith('file:')) fields[2] = pathToFileURL(path.resolve(knime, fields[2])).href;
       return fields.join(',');
     });
-    let bundleName='org.knime.agent.bridge_0.3.1.jar';
+    const version=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
+    let bundleName='org.knime.agent.bridge_'+version+'.jar';
     try {
       const latest=JSON.parse(await fs.readFile(path.join(root,'artifacts','latest.json'),'utf8'));
-      if(!/^org\.knime\.agent\.bridge_0\.3\.1-[a-f0-9]{12}\.jar$/.test(latest.bundle))throw new Error('Invalid built bundle name in artifacts/latest.json');
+      if(!/^org\.knime\.agent\.bridge_[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{12}\.jar$/.test(latest.bundle)||!latest.bundle.startsWith('org.knime.agent.bridge_'+version+'-'))throw new Error('Invalid built bundle name in artifacts/latest.json');
       bundleName=latest.bundle;
     } catch(error) {if(error.code!=='ENOENT')throw error;}
     const bundle = path.join(root, 'artifacts', bundleName);
     await fs.access(bundle);
-    lines.push(['org.knime.agent.bridge', '0.3.1', pathToFileURL(bundle).href, '4', 'true'].join(','));
+    lines.push(['org.knime.agent.bridge', version, pathToFileURL(bundle).href, '4', 'true'].join(','));
     await fs.writeFile(path.join(config, 'org.eclipse.equinox.simpleconfigurator', 'bundles.info'), lines.join('\n') + '\n');
     // p2 does not URL-decode this location. Retain the config-relative form and
     // private profile copy so paths containing spaces remain valid.
@@ -176,4 +177,3 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exitCode = 1;
   });
 }
-

@@ -7,7 +7,7 @@ const session = z.string().min(1).optional().describe('Explicit live session ID 
 const timeoutMs = z.number().int().min(1).max(3600000).optional().describe('Response timeout in milliseconds (default 30000). Timeout never cancels or retries the operation; inspect state before retrying.');
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const advanced = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
-const precondition=preconditionSchema.optional().describe('Required for v0.2 mutations: bind knime_context, then send {contextId,expected:context.revisions}. Re-read after each edit.');
+const precondition=preconditionSchema.optional().describe('Required for mutations. Graph: {contextId,expected:context.revisions}; workspace-only create/open: {contextId,expected:{}} (never null). Inspect the same binding after each edit.');
 const operationId=z.string().uuid().optional().describe('Optional original request UUID for reconciling identical redelivery. Never generate a fresh ID merely to retry an unknown mutation outcome.');
 const coreId = z.string().min(1).refine(value => value.trim().length > 0, 'ID must not be blank.');
 const projectId = coreId.describe('ID of an already loaded project from the live application state.');
@@ -20,10 +20,28 @@ const tableOffset = z.union([
 
 export const toolCatalog = [
   {
+    name:'knime_connection',title:'Inspect the configured KNIME connection',
+    description:'Read filesystem runtime and exact session/process/workspace/bundle identity without dispatching to KNIME. Descriptor readiness does not certify UI responsiveness. A session UUID cannot switch runtime directories.',
+    inputSchema:{session},annotations:readOnly,
+    run:(client,input)=>client.connectionDiagnostics(input),
+  },
+  {
+    name:'knime_settings_preview',title:'Preview a typed settings change',
+    description:'Native read-only validation of patches on a detached full settings envelope. Returns typed diff, candidate validation, coverage and potential downstream reset impact. Never loads settings or resets nodes. Applying still needs fresh revisions.',
+    inputSchema:{projectId,workflowId,nodeId,patches:z.array(z.object({path:z.array(z.string().min(1)).min(1).max(64),value:z.unknown(),type:z.string().min(1).optional(),createParents:z.boolean().optional()}).strict()).min(1).max(1000),session,timeoutMs},annotations:readOnly,
+    run:(client,{session,timeoutMs,...args})=>client.call('core.settings.preview',args,{session,timeoutMs}),
+  },
+  {
+    name:'knime_dependencies',title:'Inspect dependencies and effective model settings',
+    description:'Read bounded upstream connections, available typed flow variables, setting bindings and native flow-variable-resolved model settings for one exact scope/node. Protected values are redacted; unsupported resolution remains explicit. Does not execute nodes or certify output run identity.',
+    inputSchema:{projectId,workflowId,nodeId,maxNodes:z.number().int().min(1).max(10000).optional(),maxVariables:z.number().int().min(1).max(1000).optional(),includeEffectiveSettings:z.boolean().optional(),session,timeoutMs},annotations:readOnly,
+    run:(client,{session,timeoutMs,...args})=>client.call('dependency.inspect',args,{session,timeoutMs}),
+  },
+  {
     name: 'knime_sessions', title: 'List local KNIME sessions',
     description: 'List bridge sessions with process ID, workspace, versions, readiness and heartbeat status. Stale and unavailable sessions remain visible for diagnosis. Inspect this before selecting a workspace; multiple live sessions require an explicit ID.',
     inputSchema: {}, annotations: readOnly,
-    run: async client => ({ sessions: await client.listSessions() }),
+    run: async client => ({ runtime:client.runtime, sessions: await client.listSessions() }),
   },
   {
     name: 'knime_health', title: 'Inspect KNIME bridge health',
@@ -100,7 +118,8 @@ export const toolCatalog = [
 export const operationGuide = {
   purpose: 'Operate the selected live KNIME instance and inspect the same workflow model used by its editor.',
   discovery: [
-    'In v0.2, bind knime_context to the intended workspace/project/nested scope before mutation. Pass precondition {contextId,expected:context.revisions} to native mutating calls. Refresh observations and replan after conflicts; never force an old plan through with new digests.',
+    'In v0.2 and later, bind knime_context to the intended workspace/project/nested scope before mutation. Workspace-only create/open uses precondition {contextId,expected:{}}; graph changes use current context.revisions. Refresh observations and replan after conflicts; never force an old plan through with new digests.',
+    'In v0.4 inspect knime_connection to confirm configured runtime, PID and fingerprints. A session ID cannot switch runtime directories. Bind once per live scope, inspect to refresh, monitor usage, and release after outstanding operations and assessments finish. Prune frees only proven invalid models; historical evidence remains readable.',
     'Call knime_sessions, identify the intended workspace and pass its session ID explicitly when more than one instance is ready. Then call knime_health.',
     'Call knime_describe for gateway services; filter with service and method. Obtain native operation contracts through knime_core_call {operation:"core.describe",args:{}} and visible editor contracts through knime_desktop_call {operation:"desktop.describe",args:{}}.',
     'Before constructing a command entity, call knime_describe {entity:"AddNodeCommandEnt"} or the exact entity type in the method schema. Include any required discriminator and respect discovered field names and enum values.',
@@ -111,9 +130,11 @@ export const operationGuide = {
     'Use read-only knime_workflow for the selected project to inspect node IDs, factory/types, labels, positions, state, connections, annotations, errors and permitted actions. Include components and metanodes by traversing nested workflow IDs within a deliberate depth limit and inspect truncation fields.',
     'Use read-only knime_settings for typed settings and knime_table for bounded output table pages. Use the native port indices from knime_workflow. Preserve missing values separately from empty strings, decimal-string long values and nextOffset, and inspect reported truncation/continuation. Avoid passwords and secrets in routine snapshots.',
     'Use read-only knime_nodes to search the installed active node catalogue before adding a node. Configuration support depends on the actual node implementation; report unsupported or opaque settings instead of inventing them.',
+    'Use knime_dependencies to inspect upstream connections, native variable stacks and variable-resolved model settings. A stored Reader fallback is not its effective path. Independently check the requested run UUID and all expected values across stable table pages; a resolved path or sample alone does not prove freshness. Preserve and verify expensive producer output identity rather than rerunning it merely for inspection.',
   ],
   mutations: [
     'Inspect settingsValidation after adding/configuring a node. Configured/executed state does not prove model settings serialize and validate. Incomplete settings must be repaired before execution or save; do not edit loaded workflow XML.',
+    'Use knime_settings_preview before typed configuration changes. Review native validation, diff and conservative reset impact; apply still requires current revision guards. Supply xlong/longArray values as decimal strings, and preserve explicitly reported unknown validation, variable, view and persistence coverage.',
     'knime_wait observes execution, open/close or clean-save conditions without repeating the operation. Its saved condition is not saved-artifact verification. Use desktop.uiState for bounded warning text; desktop.dialogAction reveals Details then acknowledges only an unchanged observed Workflow Load warning. Re-inspect after revealing details.',
     'For copy/paste, pass the exact copy.content string unchanged to paste.content; do not JSON.parse or stringify it again. core.execute uses nodeId, NodeService.changeNodeStates uses nodeIds, and knime_table uses portIndex.',
     'For canvas work, use knime_canvas_view before and after editing. Run knime_layout_check, then actually inspect readable images and required tiles. A generated image, executed node, or clean graph alone does not establish visual completion. Preserve instructional group membership by supplying groups/pins to layout planning; geometric clearance does not understand annotation meaning.',

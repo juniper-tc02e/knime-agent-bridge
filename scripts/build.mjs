@@ -20,7 +20,8 @@ const signature=createHash('sha256');
 signature.update(await fs.readFile(path.join(root,'java','META-INF','MANIFEST.MF')));
 for(const source of sources.sort()){signature.update(path.relative(root,source));signature.update(await fs.readFile(source));}
 const revision=signature.digest('hex').slice(0,12);
-const artifact=path.join(root,'artifacts','org.knime.agent.bridge_0.3.1-'+revision+'.jar');await fs.mkdir(path.dirname(artifact),{recursive:true});
+const version=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8')).version;
+const artifact=path.join(root,'artifacts','org.knime.agent.bridge_'+version+'-'+revision+'.jar');await fs.mkdir(path.dirname(artifact),{recursive:true});
 const temporary=artifact+'.'+randomUUID()+'.tmp';
 result=spawnSync(path.join(jdk,'bin','jar.exe'),['--create','--file',temporary,'--manifest',path.join(root,'java','META-INF','MANIFEST.MF'),'-C',classes,'.'],{stdio:'inherit',windowsHide:true});
 if(result.status!==0)process.exit(result.status||1);

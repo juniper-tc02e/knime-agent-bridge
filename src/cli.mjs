@@ -7,13 +7,14 @@ import { BridgeClient, BridgeError } from './client.mjs';
 import { dispatchTool, errorPayload } from './catalog.mjs';
 import {IMAGES} from './mcp-result.mjs';
 
-export const VERSION = '0.3.1';
+export const VERSION = '0.4.0';
 const HELP = `KNIME Agent Bridge ${VERSION}
 
 Usage: knime-agent <command> [arguments] [options]
 
 Commands:
   sessions                           List live and unavailable local sessions
+  connection                         Inspect runtime/process identity without native dispatch
   health                             Inspect the selected KNIME instance
   describe [Service [method]]        Discover installed methods and schemas
   call Service.method                Invoke a discovered gateway method
@@ -76,7 +77,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   const [command, ...rest] = positionals;
   const client = new BridgeClient(clientOptions);
   const allowed = {
-    sessions: [], health: [], describe: ['service', 'method', 'entity'], call: ['params', 'args-file','precondition-file'], core: ['args', 'args-file','precondition-file'], desktop: ['args', 'args-file','precondition-file'], tool:['args','args-file','output'], mcp: [],
+    sessions: [], connection: [], health: [], describe: ['service', 'method', 'entity'], call: ['params', 'args-file','precondition-file'], core: ['args', 'args-file','precondition-file'], desktop: ['args', 'args-file','precondition-file'], tool:['args','args-file','output'], mcp: [],
   };
   if (!(command in allowed)) throw new BridgeError('INVALID_ARGUMENT', `Unknown command '${command}'. Use --help.`);
   for (const key of ['params', 'args', 'args-file', 'precondition-file','output','service', 'method', 'entity']) {
@@ -86,6 +87,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   if (command === 'mcp') { const { startServer } = await import('./server.mjs'); await startServer({ client }); return; }
   let name, input;
   if (command === 'sessions') { name = 'knime_sessions'; input = {}; }
+  if (command === 'connection') { name = 'knime_connection'; input = {}; }
   if (command === 'health') { name = 'knime_health'; input = {}; }
   if (command === 'describe') { name = 'knime_describe'; input = { service: values.service ?? rest[0], method: values.method ?? rest[1], entity: values.entity }; }
   if (command === 'call') { name = 'knime_gateway_call'; input = { method: rest[0], params: await jsonArgs(values, command) }; }

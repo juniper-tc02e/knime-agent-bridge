@@ -1,5 +1,5 @@
 {
-  "bundle": "org.knime.agent.bridge_0.3.1-15a0bc0c133b.jar",
-  "revision": "15a0bc0c133b",
+  "bundle": "org.knime.agent.bridge_0.4.0-f24d09092bba.jar",
+  "revision": "f24d09092bba",
   "targetJava": 21
 }

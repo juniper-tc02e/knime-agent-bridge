@@ -29,7 +29,12 @@ final class OperationAccess {
         if(receipt==null&&aggregateFailure!=null)throw aggregateFailure;
         if(receipt==null)throw new ContextAccess.Conflict("OPERATION_NOT_FOUND","No operation recorded for this session and ID");
         if(!id.equals(receipt.path("operationId").asText())||!sessionId.equals(receipt.path("sessionId").asText()))throw new IllegalArgumentException("Receipt identity mismatch");
-        if(!receipt.path("pinned").asBoolean()&&receipt.has("expiresAt")&&Instant.parse(receipt.path("expiresAt").asText()).isBefore(Instant.now()))receipt.put("status","expired");
+        boolean pinned=receipt.path("pinned").isBoolean()&&receipt.path("pinned").asBoolean();
+        boolean expired=!pinned&&receipt.hasNonNull("expiresAt")&&Instant.parse(receipt.path("expiresAt").asText()).isBefore(Instant.now());
+        // Retention is metadata, never a native outcome or cancellation. Preserve
+        // the authoritative status and UUID deduplication even after expiry.
+        ObjectNode retention=receipt.putObject("retention").put("pinned",pinned).put("expired",expired).put("cancellationImplied",false);
+        retention.set("expiresAt",receipt.has("expiresAt")?receipt.get("expiresAt").deepCopy():NullNode.instance);
         return receipt;
     }
     private ObjectNode read(Path path)throws Exception {

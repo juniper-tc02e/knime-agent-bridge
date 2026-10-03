@@ -10,7 +10,7 @@ import { VERSION, parseCli } from './cli.mjs';
 
 export function createServer({ client = new BridgeClient() } = {}) {
   const server = new McpServer({ name: 'knime-agent-bridge', version: VERSION }, {
-    instructions: 'Read knime://guide. Inspect knime_sessions and knime_health, then bind knime_context to the intended project/scope. Use current revision preconditions for mutations. Discover gateway entities and native core/desktop contracts before use. For canvas work, obtain actual images with knime_canvas_view, inspect readable tiles, run knime_layout_check and preserve instructional groups/pins. Re-render after edits. A screenshot generated, command acknowledged or node executed is not visual completion. Use separate quality dimensions and disclose incomplete coverage. Timeout is unknown: reconcile knime_operation, never automatically retry. Do not invoke Kai, Hub, external or paid services merely for context.',
+    instructions: 'Read knime://guide. Inspect knime_connection, knime_sessions and knime_health to confirm runtime/PID/workspace, then bind knime_context to the intended project/scope once. Inspect that binding to refresh revisions; release it when no queued/in-flight operation or later quality assessment needs it. Read usage before exhaustion; prune only invalid models. Workspace create/open uses expected:{}, graph changes use current revisions. Preview typed settings with knime_settings_preview before apply; inspect native-resolved model settings and upstream variables with knime_dependencies before reading run-specific data. Discover installed gateway/core contracts. For canvas work, obtain actual PNG images, inspect readable tiles, check geometry and re-render after edits. A screenshot generated, command acknowledged or node executed is not completion. Keep functional, visual and persistence evidence separate. Timeout is unknown: reconcile the original knime_operation ID/session without replay. Do not invoke Kai, Hub, external or paid services merely for context.',
   });
   for (const tool of toolCatalog) {
     const { name, run: _run, ...config } = tool;
@@ -31,7 +31,8 @@ export function createServer({ client = new BridgeClient() } = {}) {
   });
   const resources = [
     { name: 'guide', uri: 'knime://guide', description: 'Operational guide: capability discovery, complete workflow context, visible editor, validation and safe timeout handling.', read: async () => operationGuide },
-    { name: 'sessions', uri: 'knime://sessions', description: 'Local KNIME sessions, workspaces, versions and heartbeat availability.', read: async () => ({ sessions: await client.listSessions() }) },
+    { name: 'sessions', uri: 'knime://sessions', description: 'Local KNIME sessions, workspaces, versions and heartbeat availability.', read: async () => ({ runtime:client.runtime, sessions: await client.listSessions() }) },
+    { name:'connection',uri:'knime://connection',description:'Configured runtime and selected process identity; descriptor readiness is distinct from responsiveness.',read:()=>client.connectionDiagnostics() },
     { name: 'capabilities', uri: 'knime://capabilities', description: 'Service and method capabilities from the selected live KNIME bridge. Use an explicit server --session if multiple instances are running.', read: () => client.call('gateway.describe', {}) },
   ];
   for (const resource of resources) {

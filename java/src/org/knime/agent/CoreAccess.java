@@ -28,7 +28,7 @@ public final class CoreAccess {
         if(TABLE_IDENTITIES.size()>=4096)TABLE_IDENTITIES.clear(); // Eviction changes IDs, conservatively invalidating paged reads.
         String id=UUID.randomUUID().toString();TABLE_IDENTITIES.add(new TableIdentity(new java.lang.ref.WeakReference<>(table),id));return id;
     }
-    private static final List<String> OPERATIONS=List.of("core.describe","core.snapshot","core.settings.get","core.settings.patch",
+    private static final List<String> OPERATIONS=List.of("core.describe","core.snapshot","core.settings.get","core.settings.preview","core.settings.patch",
         "core.execute","core.reset","core.cancel","core.table.read","core.port.inspect","core.port.export",
         "core.nodes.search","core.nodes.details");
     public static Object describe() {
@@ -55,10 +55,10 @@ public final class CoreAccess {
                     property(props,"includeSettings","boolean","Include redacted typed settings envelopes").put("default",false);
                 }
                 case "core.settings.get" -> contract.put("description","Read the complete typed settings envelope; protected values are redacted");
-                case "core.settings.patch" -> {
-                    contract.put("description","Validate and apply typed edits to a detached full settings envelope; may reset downstream nodes");
+                case "core.settings.preview", "core.settings.patch" -> {
+                    contract.put("description",op.endsWith("preview")?"Read-only typed patch preflight: detached full-envelope diff, native validation and conservative possible reset impact; never loads settings":"Validate and apply typed edits to a detached full settings envelope; may reset downstream nodes");
                     required.add("nodeId");required.add("patches");ObjectNode patches=props.putObject("patches").put("type","array").put("minItems",1).put("maxItems",1000);
-                    ObjectNode item=patches.putObject("items").put("type","object");item.putArray("required").add("path").add("value");ObjectNode fields=item.putObject("properties");
+                    ObjectNode item=patches.putObject("items").put("type","object").put("additionalProperties",false);item.putArray("required").add("path").add("value");ObjectNode fields=item.putObject("properties");
                     ObjectNode path=fields.putObject("path").put("type","array").put("minItems",1).put("maxItems",64);
                     path.putObject("items").put("type","string").put("minLength",1);
                     property(fields,"type","string","Required for a new key; existing scalar types are inferred").putArray("enum")
@@ -67,6 +67,7 @@ public final class CoreAccess {
                     fields.putObject("value").put("description","Value must match type; use decimal strings for xlong/longArray; string null is distinct from empty; nonfinite floats use NaN/Infinity/-Infinity strings");
                     property(fields,"createParents","boolean","Create missing config groups on this path before native validation").put("default",false);
                     contract.put("protectedValues","Password, transient and secret/credential entries remain unchanged and cannot be edited");
+                    contract.put("patchConflicts","Duplicate paths and ancestor/descendant edits in the same request are rejected");
                 }
                 case "core.execute", "core.reset", "core.cancel" -> contract.put("description","Native execution control; returns acceptance/current state, not verified completion. Poll core.snapshot.");
                 case "core.table.read" -> {
@@ -108,8 +109,9 @@ public final class CoreAccess {
             case "core.nodes.search" -> search(args);
             case "core.nodes.details" -> details(args);
             case "core.snapshot" -> snapshot(args);
-            case "core.settings.get" -> settings(args,false);
-            case "core.settings.patch" -> settings(args,true);
+            case "core.settings.get" -> settings(args,false,false);
+            case "core.settings.preview" -> settings(args,false,true);
+            case "core.settings.patch" -> settings(args,true,false);
             case "core.execute", "core.reset", "core.cancel" -> execution(operation,args);
             case "core.table.read" -> table(args);
             case "core.port.inspect" -> port(args,false);
@@ -253,25 +255,69 @@ public final class CoreAccess {
         try {SettingsHealth.Snapshot settings=SettingsHealth.read(nc);out.set("settings",SettingsCodec.encode(settings.settings()));out.set("settingsValidation",settings.validation());out.put("settingsAvailable",!settings.validation().path("serialization").asText().equals("failed"));}
         catch(Exception e){out.put("settingsAvailable",false).put("settingsError",e.getClass().getSimpleName());}
     }
-    private static Object settings(JsonNode args,boolean patch) throws Exception {
+    private static Object settings(JsonNode args,boolean patch,boolean preview) throws Exception {
+        if(patch||preview)SettingsCodec.validatePatches(args.path("patches"));
         WorkflowManager root=root(args);
         try(var lock=root.lock()) {
             NodeContainer nc=selectedNode(root,args);
             NodeContext.pushContext(nc);
             try {
                 SettingsHealth.Snapshot inspected=SettingsHealth.read(nc);NodeSettings settings=inspected.settings();
-                if(patch) {
-                    OperationPolicy.apply();
-                    if(nc==root)throw new IllegalArgumentException("Patch an individual node, component, or metanode, not the project root");
-                    SettingsCodec.patch(settings,args.path("patches"));
-                    nc.getParent().loadNodeSettings(nc.getID(),settings);
-                    inspected=SettingsHealth.read(nc);settings=inspected.settings();
-                }
                 ObjectNode result=BridgeActivator.JSON.createObjectNode().put("projectId",required(args,"projectId"))
                     .put("nodeId",nc.getID().toString()).put("state",nc.getNodeContainerState().toString()).put("applied",patch);
+                if(patch||preview) {
+                    if(nc==root)throw new IllegalArgumentException("Patch or preview an individual node, component, or metanode, not the project root");
+                    SettingsPreview.Prepared prepared=SettingsPreview.prepare(settings,args.path("patches"));
+                    ObjectNode validation=SettingsHealth.validate(nc,prepared.settings());
+                    result.set("diff",prepared.diff());result.put("changedFields",prepared.changedFields());
+                    result.set("beforeSettingsValidation",inspected.validation());result.set("settingsValidation",validation);
+                    result.put("validForSave",validation.path("validForSave").asBoolean());
+                    result.put("accepted",validation.path("serialization").asText().equals("passed")&&validation.path("validation").asText().equals("passed"));
+                    if(preview) {
+                        result.put("preview",true).put("applied",false).put("nativeDispatch","not_started");
+                        result.set("settings",SettingsCodec.encode(prepared.settings()));
+                        result.set("resetImpact",resetImpact(root,nc));
+                        result.putObject("coverage").put("patchRules","shared-with-apply").put("nativeValidation",validation.path("coverage").asText())
+                            .put("protectedValues","preserved; redacted").put("viewSettings","not_checked").put("savedReopen","not_checked");
+                        result.putArray("unknown").add("effective flow-variable overrides").add("custom view settings validation")
+                            .add("exact reset/configuration and execution effects at apply time").add("future serializer behavior and saved-file reopen");
+                        for(JsonNode row:prepared.diff())if(row.path("arrayElementTypeCoverage").asText().startsWith("unknown"))
+                            ((ArrayNode)result.path("unknown")).add("empty native array element type at "+row.path("path"));
+                        return result;
+                    }
+                    if(!result.path("accepted").asBoolean())throw new ContextAccess.Conflict("NODE_SETTINGS_INVALID",
+                        "Detached patched settings failed native preflight; no settings were loaded and no reset was dispatched.",result.put("applied",false).put("nativeDispatch","not_started"));
+                    OperationPolicy.apply();
+                    nc.getParent().loadNodeSettings(nc.getID(),prepared.settings());
+                    inspected=SettingsHealth.read(nc);settings=inspected.settings();
+                    result.put("state",nc.getNodeContainerState().toString()).put("validForSave",inspected.validation().path("validForSave").asBoolean());
+                }
                 result.set("settings",SettingsCodec.encode(settings));result.set("settingsValidation",inspected.validation());return result;
             } finally {NodeContext.removeLastContext();}
         }
+    }
+    private static ObjectNode resetImpact(WorkflowManager root,NodeContainer selected) {
+        ObjectNode result=BridgeActivator.JSON.createObjectNode().put("potential",true).put("resetPerformed",false)
+            .put("exact",false).put("coverage","conservative graph reachability including enclosing containers and their descendants/successors")
+            .put("reason","A later load may reset/reconfigure the selected node and affected successors, including for a no-op patch");
+        ArrayNode rows=result.putArray("nodes");Set<NodeContainer> visited=Collections.newSetFromMap(new IdentityHashMap<>());
+        ArrayDeque<NodeContainer> pending=new ArrayDeque<>();pending.add(selected);boolean truncated=false;
+        while(!pending.isEmpty()) {
+            NodeContainer node=pending.removeFirst();if(node==root||!visited.add(node))continue;
+            if(rows.size()>=10000){truncated=true;break;}
+            rows.addObject().put("nodeId",node.getID().toString()).put("state",node.getNodeContainerState().toString())
+                .put("selected",node==selected).put("potentiallyReset",true);
+            WorkflowManager child=nested(node);if(child!=null)pending.addAll(child.getNodeContainers());
+            WorkflowManager parent=node.getParent();if(parent==null)continue;
+            for(ConnectionContainer connection:parent.getConnectionContainers())if(connection.getSource().equals(node.getID())) {
+                NodeContainer destination=NativeTarget.findExact(parent,connection.getDest().toString(),0);if(destination!=null)pending.add(destination);
+            }
+            if(parent!=root) {
+                NodeContainer enclosing=NativeTarget.findExact(root,parent.getID().toString(),0);
+                if(enclosing!=null&&enclosing!=node)pending.add(enclosing);
+            }
+        }
+        return result.put("listedNodes",rows.size()).put("truncated",truncated);
     }
     private static Object execution(String operation,JsonNode args) throws Exception {
         WorkflowManager root=root(args);

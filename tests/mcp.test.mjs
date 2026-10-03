@@ -62,7 +62,7 @@ test('MCP stdio discovery, tools, errors and resources use the real file transpo
 
   await t.test('tool discovery documents explicit sessions and advanced call contracts', async () => {
     const list = await client.listTools();
-    assert.deepEqual(list.tools.map(tool => tool.name).sort(), ['knime_core_call', 'knime_describe', 'knime_desktop_call', 'knime_gateway_call', 'knime_health', 'knime_nodes', 'knime_sessions', 'knime_settings', 'knime_table', 'knime_workflow', 'knime_context','knime_canvas_view','knime_layout_check','knime_layout_plan','knime_layout_apply','knime_operation','knime_verify_workflow','knime_wait'].sort());
+    assert.deepEqual(list.tools.map(tool => tool.name).sort(), ['knime_core_call', 'knime_describe', 'knime_desktop_call', 'knime_gateway_call', 'knime_health', 'knime_nodes', 'knime_sessions', 'knime_settings', 'knime_table', 'knime_workflow', 'knime_context','knime_canvas_view','knime_layout_check','knime_layout_plan','knime_layout_apply','knime_operation','knime_verify_workflow','knime_wait','knime_connection','knime_settings_preview','knime_dependencies'].sort());
     const advanced = list.tools.find(tool => tool.name === 'knime_gateway_call');
     assert.match(advanced.description, /knime_describe/);
     assert.deepEqual(advanced.inputSchema.properties.params.anyOf.map(branch => branch.type), ['array', 'object']);
@@ -185,7 +185,7 @@ test('MCP stdio discovery, tools, errors and resources use the real file transpo
   });
   await t.test('resources disclose capabilities and sessions through shared client', async () => {
     const resources = await client.listResources();
-    assert.deepEqual(resources.resources.map(resource => resource.uri).sort(), ['knime://capabilities', 'knime://guide', 'knime://sessions']);
+    assert.deepEqual(resources.resources.map(resource => resource.uri).sort(), ['knime://capabilities', 'knime://connection', 'knime://guide', 'knime://sessions']);
     const capabilities = await client.readResource({ uri: 'knime://capabilities' });
     assert.equal(capabilities.contents[0].mimeType, 'application/json');
     assert.deepEqual(JSON.parse(capabilities.contents[0].text).services, ['WorkflowService']);

@@ -13,8 +13,8 @@ import org.eclipse.ui.PlatformUI;
 
 /** A local, per-process command queue. No sockets, account tokens, or remote services. */
 public final class BridgeActivator implements BundleActivator {
-    static final ObjectMapper JSON = new ObjectMapper();
-    static final String VERSION = "0.3.1";
+    static final ObjectMapper JSON = new ObjectMapper().enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+    static final String VERSION = "0.4.0";
     private final String id = UUID.randomUUID().toString();
     private final String startedAt = Instant.now().toString();
     private ScheduledExecutorService heartbeat;
@@ -128,6 +128,10 @@ public final class BridgeActivator implements BundleActivator {
                 case "health" -> metadata("ready");
                 case "context.bind" -> contexts.bind(args);
                 case "context.inspect" -> contexts.inspect(NativeTarget.required(args,"contextId"));
+                case "context.usage" -> contexts.usage(args);
+                case "context.release" -> contexts.release(args);
+                case "context.prune" -> contexts.prune(args);
+                case "dependency.inspect" -> DependencyAccess.inspect(cleanArgs(args));
                 case "operation.get" -> operations.get(NativeTarget.required(args,"operationId"));
                 case "canvas.preview", "canvas.viewport", "canvas.capabilities" -> canvas.call(operation,args);
                 case "layout.apply" -> LayoutAccess.apply(contexts,args);
@@ -173,7 +177,7 @@ public final class BridgeActivator implements BundleActivator {
     }
     private void error(ObjectNode response,Throwable e) {
         response.put("ok",false);ObjectNode error=response.putObject("error");
-        error.put("code",e instanceof ContextAccess.Conflict c?c.code:e instanceof GatewayAccess.GatewayException?"KNIME_ERROR":e instanceof IllegalArgumentException?"INVALID_ARGUMENT":"BRIDGE_ERROR");
+        error.put("code",e instanceof ContextAccess.Conflict c?c.code:e instanceof GatewayAccess.GatewayException?"KNIME_ERROR":e instanceof IllegalArgumentException||e instanceof com.fasterxml.jackson.core.JsonProcessingException?"INVALID_ARGUMENT":"BRIDGE_ERROR");
         error.put("message",e.getMessage()==null?e.toString():e.getMessage());
         if(e instanceof GatewayAccess.GatewayException ge)error.set("details",ge.detail);
         else if(e instanceof ContextAccess.Conflict c)error.set("details",c.details);

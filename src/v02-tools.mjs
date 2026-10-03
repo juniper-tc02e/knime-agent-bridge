@@ -77,6 +77,19 @@ export async function noteMutation(client,{precondition,receipt,uncertain=false}
  }
 }
 async function bind(client,input) {
+ if(['usage','prune'].includes(input.action)) {
+  if(input.contextId||input.projectId||input.workflowId)throw new BridgeError('INVALID_ARGUMENT',input.action+' takes session only; no graph target.');
+  return client.call('context.'+input.action,{}, {session:input.session,timeoutMs:input.timeoutMs});
+ }
+ if(input.action==='release') {
+  if(!input.contextId||input.projectId||input.workflowId)throw new BridgeError('INVALID_ARGUMENT','release requires contextId only, with optional session.');
+  const {store}=await services(client);let saved;try{saved=store.get('context-'+input.contextId);}catch{}
+  if(saved&&input.session&&saved.sessionId!==input.session)throw new BridgeError('CONTEXT_CHANGED','Release session differs from recorded context.');
+  const result=await client.call('context.release',{contextId:input.contextId},{session:input.session??saved?.sessionId,timeoutMs:input.timeoutMs});
+  store.put('context-release',{contextId:input.contextId,sessionId:input.session??saved?.sessionId??client.session,result});return result;
+ }
+ if(input.action==='inspect'&&(!input.contextId||input.projectId||input.workflowId))throw new BridgeError('INVALID_ARGUMENT','inspect requires contextId and no graph target.');
+ if(input.action==='bind'&&input.contextId)throw new BridgeError('INVALID_ARGUMENT','bind does not take contextId; use inspect to refresh an existing binding.');
  const {store,context}=await services(client);
  if(input.action==='inspect')return context(input.contextId);
  const args={};if(input.projectId!==undefined)args.projectId=input.projectId;if(input.workflowId!==undefined)args.workflowId=input.workflowId;
@@ -184,7 +197,7 @@ async function verify(client,{action,input}) {
 const verifyInputSchema=z.union(verifyWorkflowSchema.options.map(schema=>schema.omit({action:true})));
 export const preconditionSchema=z.object({contextId:id,expected:z.object({structure:id.optional(),configuration:id.optional(),layout:id.optional(),execution:id.optional()}).strict()}).strict();
 export const v02Tools=[
- {name:'knime_context',title:'Bind the intended KNIME workflow',description:'Bind one running session, workspace, project and nested scope; inspect current revisions before mutations. Workspace-only binding supports create/open. Never follows another process after restart.',inputSchema:{action:z.enum(['bind','inspect']).default('bind'),projectId:id.optional(),workflowId:id.optional(),contextId:id.optional(),session,timeoutMs},annotations:readonly,run:bind},
+ {name:'knime_context',title:'Manage an immutable KNIME context',description:'Bind session/workspace/project/scope once, inspect to refresh revisions, release unused IDs explicitly, read usage/capacity, or prune closed/replaced models. Release preserves historical evidence and makes old IDs invalid. Never retargets. Workspace lifecycle uses expected:{}; graph edits require current revisions.',inputSchema:{action:z.enum(['bind','inspect','usage','release','prune']).default('bind'),projectId:id.optional(),workflowId:id.optional(),contextId:id.optional(),session,timeoutMs},annotations:local,run:bind},
  {name:'knime_canvas_view',title:'See the KNIME canvas',description:'Return actual PNG images of the loaded workflow preview, readable crops/tiles, or embedded viewport. Reuse evidenceId to page one immutable source frame. Inspect freshness and omissions. Capture is not review.',inputSchema:{contextId:id,evidenceId:id.optional(),mode:z.enum(['overview','detail','tiles','viewport']).default('overview'),crop:rect.optional(),scale:z.number().positive().max(4).optional(),tileOffset:z.number().int().min(0).optional(),tileLimit:z.number().int().min(1).max(4).optional()},annotations:readonly,run:canvas},
  {name:'knime_layout_check',title:'Check rendered canvas geometry',description:'Check actual curved connections, rendered node footprints and occupied text in current image evidence. Returns defect candidates and coverage gaps. Review crops; intentional empty annotation containment is allowed.',inputSchema:{evidenceId:id},annotations:readonly,run:check},
  {name:'knime_layout_plan',title:'Plan a constrained layout repair',description:'Create an immutable local plan from rendered evidence and exact native coordinates. Preserve topology, settings and annotation text; inspect before/after changes and unresolved findings.',inputSchema:{evidenceId:id,pins:z.array(id).optional(),groups:z.array(z.object({id:id.optional(),annotationId:id.optional(),nodeIds:z.array(id),bounds:rect.optional(),alignment:z.enum(['fixed','preserve']).optional()}).strict()).optional(),changes:z.array(layoutChangeSchema).max(500).optional()},annotations:local,run:plan},

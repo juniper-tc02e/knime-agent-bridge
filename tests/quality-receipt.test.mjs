@@ -19,6 +19,21 @@ function fixture(requirements = {}) {
   const review = (taskId,c) => manager.review({taskId,evidenceIds:[c.id],frames:[{evidenceId:c.id,sourceFrameId:c.sourceFrameId,tileIds:c.coverage.requiredTileIds,received:true,readable:true,inspected:true,notes:'Inspected heading text, node labels and wire clearance in the detail tile.'}],dispositions:[]});
   return {store,manager,context,begin,capture,check,emit,review,directory};
 }
+test('task manifests query only event kinds and retain mixed change/respecification ordering',async()=>{
+  const f=fixture(),task=await f.begin(),requested=[];
+  f.store.put('context-release',{contextId:'unrelated-history'});
+  const list=f.store.list.bind(f.store);
+  f.store.list=kind=>{assert.ok(['task-change','task-respecification'].includes(kind),'Manifest must not scan unrelated history');requested.push(kind);return list(kind);};
+  f.manager.recordChange({taskId:task.taskId,contextId:'ctx7',scopeId:'root:7',dimensions:['visual'],uncertain:true});
+  await f.manager.respecify({taskId:task.taskId,source:'user',reason:'Synthetic scope revision for regression',requestedScopes:['root','root:7'],requiredDimensions:['visual','persistence']});
+  f.manager.recordChange({taskId:task.taskId,contextId:'ctx',scopeId:'root',dimensions:['executionData']});
+  f.store.put('task-change',{taskId:'foreign-task',scopeRevision:50,contextId:'foreign',scopeId:'foreign',dimensions:['configuration']});
+  const manifest=f.manager.manifest(task.taskId);
+  assert.equal(manifest.scopeRevision,3);assert.deepEqual(manifest.requestedScopes,['root','root:7']);
+  assert.deepEqual(manifest.changedScopes,['root:7','root']);assert.deepEqual(manifest.uncertainScopes,['root:7']);
+  assert.deepEqual(manifest.contextIds,['ctx','ctx7']);assert.deepEqual(manifest.requiredDimensions,['visual','persistence','executionData']);
+  assert.deepEqual(new Set(requested),new Set(['task-change','task-respecification']));
+});
 test('capture production, emission and exact image review are independent quality gates',async()=>{
   const f=fixture();const task=await f.begin();const c=f.capture();const ch=f.check(c);
   assert.equal((await f.manager.assess({taskId:task.taskId,evidenceIds:[c.id,ch.id]})).readyForCompletion,false);
