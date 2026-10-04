@@ -115,6 +115,6 @@ test('MCP creates, configures, edits, executes, inspects and persists a real KNI
   const persistedRows=await invoke('knime_table',{projectId,nodeId:filterId,portIndex:1});
   assert.deepEqual(persistedRows.rows.map(r=>r.values),[[1],[2],[3]]);
   assert.deepEqual((await invoke('knime_table',{projectId,nodeId,portIndex:1})).rows.map(r=>r.values),tableCreatorFixtureRows);
-  await fs.writeFile('runtime/native-fixture.json',JSON.stringify({item,projectId,nodeId,filterId,exportPath},null,2));
+  await fs.writeFile('runtime/native-fixture.json',JSON.stringify({item,projectId,nodeId,filterId,exportPath,sessionId:health.id,nativePid:health.pid,bundleFingerprint:health.bundleFingerprint},null,2));
  } finally {await client.close();}
 });

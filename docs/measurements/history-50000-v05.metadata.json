@@ -1,0 +1,60 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-04T16:36:47.494Z",
+  "parameters": {
+    "HISTORY_SIZES": "50000",
+    "HISTORY_SAMPLES": "1",
+    "HISTORY_IMPLEMENTATIONS": "sync,async"
+  },
+  "totalBoundMs": 600000,
+  "sourceSha256": "fde8db33b2878752bebb0f0d7e0edfbe5b606c7722b5378e33f52cb130709508",
+  "qualification": {
+    "observations": "One cold and one warm observation per implementation at 50000 records; no multi-sample latency percentile confidence",
+    "staticOmissionsCorrection": "The frozen benchmark JSON fixture.omissions string says 50000 omitted; that sentence is inaccurate for this explicitly qualified 50000-record run. This sibling metadata corrects it without changing the benchmark source or raw output.",
+    "boundaries": "Synthetic own temporary files only; no actual history or native/host/UI timing. OS cache and concurrent host tasks uncontrolled.",
+    "memory": "peakRssSampledBytes is an interval-sampled peak, not an unsampled absolute maximum."
+  },
+  "finishedAt": "2026-10-04T16:39:02.890Z",
+  "elapsedMs": 135392.50569999998,
+  "exitCode": 0,
+  "signal": null,
+  "error": null,
+  "observedRows": 4,
+  "recordCounts": [
+    50000
+  ],
+  "samplesPerMode": [
+    {
+      "implementation": "sync",
+      "mode": "cold",
+      "samples": 1
+    },
+    {
+      "implementation": "sync",
+      "mode": "warm",
+      "samples": 1
+    },
+    {
+      "implementation": "async",
+      "mode": "cold",
+      "samples": 1
+    },
+    {
+      "implementation": "async",
+      "mode": "warm",
+      "samples": 1
+    }
+  ],
+  "environment": {
+    "node": "v24.15.0",
+    "platform": "win32",
+    "arch": "x64",
+    "cpus": 22,
+    "cpuModel": "Intel(R) Core(TM) Ultra 7 155H",
+    "totalMemoryBytes": 33752997888,
+    "freeMemoryBytes": 7971614720,
+    "clock": "performance.now monotonic",
+    "capturedAt": "2026-10-04T16:38:44.034Z"
+  },
+  "outputSha256": "d6bb4afe7582eba74011d297bff66ec71b26de2d228891cb89bd688ee84aa5aa"
+}

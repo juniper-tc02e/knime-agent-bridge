@@ -2,15 +2,17 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {BridgeError} from './client.mjs';
 
 /** Observe a specific postcondition. Never reissues the command or follows a new session. */
-export async function waitForCondition(client,{session,condition,projectId,workflowId,nodeId,origin,timeoutMs=30000,pollMs=250}) {
+export async function waitForCondition(client,{session,condition,projectId,workflowId,nodeId,origin,timeoutMs=30000,pollMs=250,minReadBudgetMs=Math.min(100,Math.max(1,Math.floor(timeoutMs/2)))}) {
  if(!session||!['execution','saved','opened','closed'].includes(condition))throw new BridgeError('INVALID_ARGUMENT','Explicit session and supported condition are required.');
  if(condition==='opened'&&(!origin||!['providerId','spaceId','itemId'].every(k=>typeof origin[k]==='string'&&origin[k])))throw new BridgeError('INVALID_ARGUMENT','opened requires an exact origin.');
  if(condition!=='opened'&&(typeof projectId!=='string'||!projectId))throw new BridgeError('INVALID_ARGUMENT','projectId is required.');
  if((nodeId||workflowId)&&condition!=='execution')throw new BridgeError('INVALID_ARGUMENT','nodeId/workflowId apply only to execution.');
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isInteger(pollMs)||pollMs<1||pollMs>5000)throw new BridgeError('INVALID_ARGUMENT','Invalid wait bounds.');
+ if(!Number.isInteger(minReadBudgetMs)||minReadBudgetMs<1||minReadBudgetMs>5000)throw new BridgeError('INVALID_ARGUMENT','minReadBudgetMs must be between 1 and 5000.');
  const started=performance.now(),deadline=started+timeoutMs;let observation=null,attempts=0;
- const result=(status,extra={})=>({status,completed:status==='settled',condition,sessionId:session,attempts,elapsedMs:Math.round(performance.now()-started),observation,...(condition==='saved'?{persistenceVerified:false}:{}),...extra});
- const read=async(operation,args={})=>{const remaining=Math.floor(deadline-performance.now());if(remaining<1)return null;return client.call(operation,args,{session,timeoutMs:remaining});};
+ const absoluteDeadline={owner:'observer',startedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+timeoutMs).toISOString(),timeoutMs};
+ const result=(status,extra={})=>({status,completed:status==='settled',condition,sessionId:session,attempts,elapsedMs:Math.round(performance.now()-started),observation,deadline:{...absoluteDeadline,remainingMs:Math.max(0,Math.floor(deadline-performance.now()))},...(status==='timeout'?{expiration:'observer_expired'}:{}),...(condition==='saved'?{persistenceVerified:false}:{}),...extra});
+ const read=async(operation,args={})=>{const remaining=Math.floor(deadline-performance.now());if(remaining<minReadBudgetMs)return null;return client.call(operation,args,{session,timeoutMs:remaining});};
  while(performance.now()<deadline) {
   attempts++;
   try {
@@ -32,7 +34,7 @@ export async function waitForCondition(client,{session,condition,projectId,workf
      }
     }
    } else {
-    observation=await read('core.snapshot',{projectId,...(workflowId?{workflowId}:{}),...(nodeId?{nodeId}:{})});if(!observation)break;
+    const latest=await read('core.snapshot',{projectId,...(workflowId?{workflowId}:{}),...(nodeId?{nodeId}:{})});if(!latest)break;observation=latest;
     if(condition==='saved'&&observation.dirty===false)return result('settled',{note:'Clean live state observed. Reopen/export verification is still required.'});
     if(condition==='execution') {
      if(observation.state==='EXECUTED')return result('settled');

@@ -16,7 +16,8 @@ async function fixture(t, id='same-session') {
   const metadata={id,pid:process.pid,startedAt:'2026-10-03T01:00:00Z',workspace:'file:/synthetic/工作区/',bridgeVersion:'0.4.0',bundleFingerprint:'bundle-a',capabilityFingerprint:'cap-a',heartbeat:new Date().toISOString(),status:'ready'};
   const publish=changes=>fs.writeFile(path.join(dir,'session.json'),JSON.stringify({...metadata,...changes}));
   await publish({});
-  return {runtime,dir,metadata,publish,client:new BridgeClient({runtime,session:id,pollMs:2,timeoutMs:35})};
+  // Total IPC budget includes selection/staging; these fixtures require actual publication.
+  return {runtime,dir,metadata,publish,client:new BridgeClient({runtime,session:id,pollMs:2,timeoutMs:300})};
 }
 
 test('connection diagnostics separate descriptor readiness from native responsiveness without publishing',async t=>{
@@ -62,7 +63,8 @@ test('timeout exposes transport expiry and reconcile-only identity; later receip
   const f=await fixture(t),operationId=randomUUID();let effects=0;
   const dispatch=(async()=>{
     const target=path.join(f.dir,'requests',operationId+'.json');
-    while(true){try{await fs.readFile(target);break;}catch(e){if(e.code!=='ENOENT')throw e;await delay(2);}}
+    const fixtureDeadline=performance.now()+3000;
+    while(true){try{await fs.readFile(target);break;}catch(e){if(e.code!=='ENOENT')throw e;if(performance.now()>=fixtureDeadline)throw new Error('Synthetic request was never published within fixture bound.');await delay(2);}}
     effects++;
     await delay(65);
     await fs.writeFile(path.join(f.dir,'operations',operationId+'.json'),JSON.stringify({operationId,sessionId:'same-session',status:'running',nativeDispatch:'returned',completionVerified:false,acceptedAt:new Date().toISOString(),expiresAt:'2026-10-10T01:00:00Z'}));

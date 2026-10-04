@@ -1,0 +1,53 @@
+{
+  "boundary": "production scheduler, journal and real disk; synthetic native/Eclipse boundaries; no polling or host rendering",
+  "liveKnime": false,
+  "baselineCommit": "7cf51b26240511d312c2909861dec36d7ec5e8ed",
+  "node": "v24.15.0",
+  "platform": "win32",
+  "java": "java 24.0.2 2025-07-15\r\nJava(TM) SE Runtime Environment (build 24.0.2+12-54)\r\nJava HotSpot(TM) 64-Bit Server VM (build 24.0.2+12-54, mixed mode, sharing)",
+  "clock": "System.nanoTime in each benchmark JVM; compare request duration distributions, never subtract separate-process timestamps",
+  "baseline": {
+    "boundary": "same-process filesystem submit/private production process/response read; native+Eclipse boundary stubs",
+    "liveKnime": false,
+    "pollingDelayIncluded": false,
+    "health": {
+      "samples": 25,
+      "p50Ms": 18.4009,
+      "p95Ms": 19.3739,
+      "maxMs": 73.2045,
+      "responseBytes": 12157
+    },
+    "operation.get": {
+      "samples": 25,
+      "p50Ms": 19.1156,
+      "p95Ms": 31.3684,
+      "maxMs": 43.5177,
+      "responseBytes": 19700
+    },
+    "threadCpuMs": 625,
+    "heapBeforeBytes": 28347112,
+    "heapAfterBytes": 38749056
+  },
+  "changed": {
+    "boundary": "same-process filesystem submit/private production process/response read; native+Eclipse boundary stubs",
+    "liveKnime": false,
+    "pollingDelayIncluded": false,
+    "health": {
+      "samples": 25,
+      "p50Ms": 22.7583,
+      "p95Ms": 33.6035,
+      "maxMs": 97.8841,
+      "responseBytes": 50873
+    },
+    "operation.get": {
+      "samples": 25,
+      "p50Ms": 23.4327,
+      "p95Ms": 34.6175,
+      "maxMs": 35.6555,
+      "responseBytes": 47865
+    },
+    "threadCpuMs": 859.375,
+    "heapBeforeBytes": 29354016,
+    "heapAfterBytes": 42943344
+  }
+}

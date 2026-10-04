@@ -1,3 +1,4 @@
+import {VERSION} from '../src/cli.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -19,7 +20,7 @@ test('v0.4 native contexts, detached preview, Unicode persistence and two-UUID e
  let receipt={status:'RUNNING',startedAt:new Date().toISOString()};
  try{
   const connection=await raw('knime_connection');const health=await raw('knime_health');
-  assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace-w2-v04-/);assert.equal(health.bridgeVersion,'0.4.0');
+  assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace-w2-v04-/);assert.equal(health.bridgeVersion,VERSION);
   receipt={...receipt,health,connection};
   const item=await gateway('SpaceService.createWorkflow',{spaceId:'local',spaceProviderId:'local',itemId:'root',itemName:'V04 Synthetic '+Date.now()});
   await desktop('desktop.openProject',{spaceId:'local',spaceProviderId:'local',itemId:item.id});

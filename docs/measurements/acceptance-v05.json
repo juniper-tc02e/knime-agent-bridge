@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "version": "0.5.0",
+  "acceptedAt": "2026-10-04T17:33:44.801Z",
+  "bundle": "org.knime.agent.bridge_0.5.0-34c7f878da0d.jar",
+  "bundleSha256": "a020eb778a183d0afead8f804b2734aed687d45fcd9ddc51bc52be1a1f17f15c",
+  "productionSources": 24,
+  "productionClassesMatched": 48,
+  "acceptance": {
+    "command": "npm run test:beta",
+    "bootstrap": {
+      "tests": 1,
+      "pass": 1,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 15192.4018
+    },
+    "main": {
+      "tests": 245,
+      "pass": 245,
+      "fail": 0,
+      "skipped": 0,
+      "durationMs": 451493.5626
+    },
+    "runnerElapsedMs": 466927.9743,
+    "rawLogSha256": "2365ea491994f009d1025f568b4ebea3df675f5fa10848055d814dd9f1e731b4"
+  },
+  "priorFailedAcceptance": {
+    "mainTests": 245,
+    "pass": 244,
+    "fail": 1,
+    "skipped": 0,
+    "logSha256": "255f1624e0b540b6339ed87ea29be04638a75e9e058790964a16c2657949b82d",
+    "bundleSha256": "905dc62c2521a753f2cee3f22871179525c3b9c90b7adbf39bf9ebc83f872abc",
+    "failure": "Native saved-workflow export attempted a read of the empty exclusively locked .knimeLock. Exact Windows error reproduced in installed-exporter harness; verified empty hash avoids reading zero-byte content while retaining metadata/identity checks and refusal of nonempty locked content."
+  },
+  "fullTable": {
+    "status": "passed",
+    "coverage": "full",
+    "totalRows": "3544",
+    "rowsRead": 3544,
+    "pagesRead": 4,
+    "finalRecheck": true,
+    "keyedValuesSha256": "6851cb87a52b2a36a14f16b435a647f8351578e8e964b2dad0534d8ec66d7a85",
+    "metrics": {
+      "positiveLabel": 1,
+      "threshold": 0.5,
+      "positiveCount": 1772,
+      "negativeCount": 1772,
+      "accuracy": 1,
+      "rocAuc": 1,
+      "tiePolicy": "average-rank-half-credit",
+      "coverage": "full"
+    },
+    "freshInference": "unverified"
+  },
+  "copyPath": {
+    "inheritedStatus": "outside_expected_root",
+    "refreshedStatus": "within_expected_root",
+    "inspectionExecutedOrResetNodes": false,
+    "refresh": "Separately authorized explicit configuration and execution in owned synthetic copied child only",
+    "freshProducerLineage": "unverified",
+    "unrelatedCohortTablePreserved": true
+  },
+  "compactDetail": {
+    "references": 5,
+    "chunks": 245,
+    "allCompleteHashesVerified": true,
+    "primaryToolCalls": 82,
+    "detailChunkCalls": 245
+  },
+  "scopedContexts": {
+    "released": 4,
+    "allReleased": true,
+    "unrelatedContextsNotEvicted": true
+  },
+  "ownedMcpExit": {
+    "code": 0,
+    "method": "stdin_eof",
+    "killed": false
+  },
+  "nativeExport": {
+    "status": "PASSED",
+    "exporter": "org.knime.core.node.workflow.WorkflowExporter",
+    "format": "knime-workflow",
+    "bytes": 51545,
+    "sha256": "d4a1f3917504bb90f2f313687839b07a864b3601478bd9a2100e0957ddbe1a7f",
+    "excludeData": false,
+    "manifestComplete": true,
+    "entries": 13,
+    "files": 12,
+    "uncompressedBytes": 73287,
+    "savePerformed": false,
+    "executionPerformed": false,
+    "resetPerformed": false,
+    "unicodeTableVerified": true,
+    "negativeCases": [
+      "dirty-root",
+      "byte-bound",
+      "nested-selector",
+      "arbitrary-output"
+    ],
+    "manifest": [
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/.artifacts/workflow-configuration-representation.json",
+        "directory": false,
+        "bytes": 3,
+        "sha256": "8eb95bcbc154530931e15fc418c8b1fe991095671409552099ea1aa596999ede"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/.artifacts/workflow-configuration.json",
+        "directory": false,
+        "bytes": 3,
+        "sha256": "8eb95bcbc154530931e15fc418c8b1fe991095671409552099ea1aa596999ede"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/Table Creator (#1)/settings.xml",
+        "directory": false,
+        "bytes": 4002,
+        "sha256": "30623ca9f5cd3c7f3ea6ea5068926a05411edf19ac5b4cd656011447e59206d0"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/workflow-metadata.xml",
+        "directory": false,
+        "bytes": 255,
+        "sha256": "fbc6986c570694e42ebedbdcf93fb99f54efe7db1d811c5594eb9685627f11bc"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/workflow.knime",
+        "directory": false,
+        "bytes": 2090,
+        "sha256": "55988fb86743bf393644fb90a7f62dd245cf2d9add402e526b66fa49324db983"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/workflow.svg",
+        "directory": false,
+        "bytes": 62013,
+        "sha256": "b8ecca512f60888c04b6830a60f52a952aa5ed0b4110cc3bf24745445e320343"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/workflowset.meta",
+        "directory": false,
+        "bytes": 450,
+        "sha256": "2976e86bbb3b9be89381e8a2e4200a589cb8ccb5134a5caa54c834603fd6c07e"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/.knimeLock",
+        "directory": false,
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/.savedWithData",
+        "directory": false,
+        "bytes": 213,
+        "sha256": "04dc3886d86ff9d937a27771e400a84d4a3a7254b8ee8364499ae4a7c122db8b"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/Table Creator (#1)/internal/",
+        "directory": true,
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/Table Creator (#1)/port_1/data.xml",
+        "directory": false,
+        "bytes": 561,
+        "sha256": "6084dc8379fe8b564f1326c06b3955818fc86a8291ce571a4470b4b2c9199ca1"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/Table Creator (#1)/port_1/data.zip",
+        "directory": false,
+        "bytes": 791,
+        "sha256": "1b1652d351afd078933921efe3082127061c1d7524a630543e5e9075fcb7908f"
+      },
+      {
+        "name": "V05 Export 中英 🚀 1791135161259/Table Creator (#1)/port_1/spec.xml",
+        "directory": false,
+        "bytes": 2906,
+        "sha256": "d5f5e69795109eca7b40a09ccd00e9d2d9c3216fb9df506d17855c739a173e65"
+      }
+    ]
+  },
+  "visual": [
+    {
+      "phase": "before",
+      "file": "canvas-v05-before.png",
+      "sha256": "23b3dca1cbdeca411abd0f2abc10037d59794b104e60d83d8a2307a1c0734f61",
+      "sourceKind": "native-preview",
+      "freshness": "verified",
+      "width": 530,
+      "height": 354,
+      "inspection": "Root agent viewed full-resolution rendered overview; before node obstructs text, after node is below text.",
+      "qualityCoverageComplete": false
+    },
+    {
+      "phase": "after",
+      "file": "canvas-v05-after.png",
+      "sha256": "82e8ca74ea3ab895f58a8d35ac3a24c386630877f6b5c50782bc991de268b517",
+      "sourceKind": "native-preview",
+      "freshness": "verified",
+      "width": 530,
+      "height": 350,
+      "inspection": "Root agent viewed full-resolution rendered overview; before node obstructs text, after node is below text.",
+      "qualityCoverageComplete": false
+    }
+  ],
+  "protectedOriginals": {
+    "trackedFilesUnchanged": true,
+    "evidenceUnchanged": true,
+    "globalConfigUnchanged": true,
+    "protectedProcessIdentitiesUnchanged": true
+  },
+  "limitations": [
+    "Native preview image is separate from synchronized live viewport; omitted required tiles retain incomplete quality coverage.",
+    "Same-host Unicode save/close/reopen is separate from native export, and is not a second-machine portability test.",
+    "Original lag causality, real Python/model/UI interruption and fresh inference remain unproved.",
+    "File flush/close/hash and checked identity are not directory fsync or a cross-process filesystem transaction.",
+    "Earlier lifecycle identity lookup failures remain unexplained despite later final-source 103/103 qualification."
+  ]
+}

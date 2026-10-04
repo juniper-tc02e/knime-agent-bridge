@@ -3,11 +3,17 @@ import { readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import {readFileSync} from 'node:fs';
+import {resolveProfile,profileCompatibility} from './profiles.mjs';
+import {startTrace} from './trace.mjs';
 
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const OPERATION = /^[A-Za-z][A-Za-z0-9_.]*$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const sourceVersion=JSON.parse(readFileSync(path.join(projectRoot,'package.json'),'utf8')).version;
+const sourceFingerprint=createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex');
+export const CLIENT_OPERATION=Symbol.for('knime.agent.client-operation');
 
 export class BridgeError extends Error {
   constructor(code, message, details = {}) {
@@ -37,6 +43,7 @@ function canonical(value) {
 }
 export function reconciliationDetails(runtime, sessionId, operationId) {
   return { runtime, sessionId, operationId, action: 'operation.get', readOnly: true, resubmits: false,
+    transport:'local_durable_journal',tool:{name:'knime_operation',arguments:{sessionId,operationId}},
     guidance: 'Read the original durable receipt and inspect native state. Reconciliation never resubmits, retries or cancels the operation.' };
 }
 
@@ -67,7 +74,10 @@ function unavailableReason(metadata, id, staleMs) {
 }
 
 export class BridgeClient {
-  constructor({ runtime = defaultRuntimeDirectory(), session, timeoutMs = 30000, pollMs = 50, staleMs = 15000 } = {}) {
+  constructor({ runtime, session, timeoutMs = 30000, pollMs = 50, staleMs = 15000, profile, profiles, profilesFile, traceDirectory, traceMaxEvents=100 } = {}) {
+    this.profile=resolveProfile({profile,profiles,profilesFile,runtime,session});
+    this.sourceIdentity={source:projectRoot,version:sourceVersion,sha256:sourceFingerprint};
+    runtime=this.profile?.runtime??runtime??defaultRuntimeDirectory();session=this.profile?.session??session;
     if (typeof runtime !== 'string' || !runtime.trim()) throw new BridgeError('INVALID_ARGUMENT', 'Runtime directory must be a nonempty path.');
     if (session !== undefined) validateSessionId(session);
     this.runtime = path.resolve(runtime);
@@ -80,6 +90,9 @@ export class BridgeClient {
     this.responseObservations = new Map();
     this.canonicalRuntime = undefined;
     this.canonicalRuntimePromise = undefined;
+    if(!Number.isInteger(traceMaxEvents)||traceMaxEvents<1||traceMaxEvents>1000)throw new BridgeError('INVALID_ARGUMENT','traceMaxEvents must be between 1 and 1000.');
+    this.traceDirectory=traceDirectory;this.traceMaxEvents=traceMaxEvents;this.traceReferences=new Map();
+    this.pendingOperations=new Map();this.observationAbort=new AbortController();
   }
 
   async resolveRuntime() {
@@ -154,12 +167,15 @@ export class BridgeClient {
   }
 
   async selectSession(id = this.session) {
+    if(this.profile&&id!==this.profile.session)throw new BridgeError('PROFILE_CONFLICT','Session override conflicts with selected profile.',{profile:this.profile.name,outcome:'not_submitted'});
     if (id !== undefined) validateSessionId(id);
     const sessions = await this.listSessions();
     if (id !== undefined) {
       const selected = sessions.find(session => session.id === id);
       if (!selected) throw new BridgeError('NO_SESSION', `KNIME session '${id}' was not found. Run sessions to inspect available instances.`, { sessionId: id, runtime: this.runtime });
       this.assertIdentity(selected);
+      const compatibility=profileCompatibility(this.profile,selected);
+      if(compatibility.compatible===false)throw new BridgeError('PROFILE_INCOMPATIBLE','Selected native identity does not match the configured profile. No request was submitted.',{profile:this.profile.name,compatibility,outcome:'not_submitted'});
       if (!selected.alive) throw new BridgeError('SESSION_UNAVAILABLE', `KNIME session '${id}' in runtime '${this.runtime}' is unavailable: ${selected.reason}`, { sessionId: id, runtime: this.runtime, outcome: 'not_submitted' });
       return selected;
     }
@@ -177,7 +193,7 @@ export class BridgeClient {
   }
 
   // Descriptor-only diagnosis: heartbeat/ready flags cannot prove the native queue responds.
-  async connectionDiagnostics({ session = this.session } = {}) {
+  async connectionDiagnostics({ session = this.session, detail=false } = {}) {
     if (session !== undefined) validateSessionId(session);
     const sessions = await this.listSessions();
     let selected = sessions.find(s => s.id === session), selectionError;
@@ -191,16 +207,41 @@ export class BridgeClient {
     const matches = pinnedIdentity && identity ? identityMatches(pinnedIdentity, identity) : null;
     const age = selected ? Date.now() - Date.parse(selected.heartbeat) : NaN;
     return { runtime: this.runtime, canonicalRuntime: this.canonicalRuntime ?? null, requestedSessionId: session ?? null, sessionId: selected?.id ?? session ?? null,
+      route:{profile:this.profile?.name??null,configurationSource:this.profile?.source??'runtime/session options or KNIME_AGENT_RUNTIME/default',source:projectRoot,sourceVersion,sourceFingerprint},compatibility:profileCompatibility(this.profile,selected),
+      lifecycle:this.lifecycleDiagnostics?.()??null,tracing:{enabled:!!this.traceDirectory,retainedReferences:this.traceReferences.size,maxEvents:this.traceMaxEvents},
       identity, pinnedIdentity, identityMatches: matches,
       readiness: { ready: selected?.alive === true, reportedStatus: selected?.reportedStatus ?? null,
         effectiveStatus: selected?.effectiveStatus ?? 'unavailable', processAlive: processAlive(selected?.pid),
         heartbeatFresh: Number.isFinite(age) && Math.abs(age) <= this.staleMs, reason: selected?.reason ?? null },
       responsiveness: matches === false ? { status: 'not_probed', reason: 'Process identity changed.' } : this.responseObservations.get(selected?.id) ?? { status: 'not_probed' },
-      ...(selectionError ? { selectionError } : {}), sessions,
+      ...(selectionError ? { selectionError } : {}), sessionCounts:{total:sessions.length,ready:sessions.filter(s=>s.alive).length,unavailable:sessions.filter(s=>!s.alive).length},
+      sessions:detail?sessions:sessions.slice(0,8).map(({id,pid,status,alive,reason,bridgeVersion})=>({id,pid,status,alive,reason,bridgeVersion})),sessionsTruncated:!detail&&sessions.length>8,
       guidance: 'Runtime selection is a client startup boundary. Descriptor readiness does not prove native responsiveness; call health explicitly to observe a response.' };
   }
 
-  async call(operation, args = {}, { session = this.session, timeoutMs = this.timeoutMs, precondition, operationId = randomUUID() } = {}) {
+  stopObserving(reason='stdio_eof') {this.observationAbort.abort(reason);}
+
+  async call(operation,args={},options={}) {
+    this.lastOperation=undefined;this.lastReceipt=undefined;
+    const timeoutMs=options.timeoutMs??this.timeoutMs;positive(timeoutMs,'timeoutMs');
+    const operationId=options.operationId??randomUUID(),started=performance.now();
+    if(!UUID.test(operationId)||typeof operation!=='string'||!OPERATION.test(operation)||!object(args))throw new BridgeError('INVALID_ARGUMENT','Operation, JSON object arguments and UUID operationId are required.');
+    const deadline={owner:'client_ipc',startedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+timeoutMs).toISOString(),timeoutMs};
+    const context={deadline,monotonicDeadline:started+timeoutMs,operationId,submission:{state:'not_submitted',publishedAt:null,expiresAt:deadline.expiresAt}};
+    const trace=startTrace({directory:this.traceDirectory,maxEvents:this.traceMaxEvents,operationId,operation,deadline,runtime:this.runtime,profile:this.profile?.name});context.trace=trace;
+    trace?.event('client_start');
+    try {const result=await this.callInternal(operation,args,{...options,operationId,timeoutMs},context);context.outcome='native_result_returned';context.result=result;return result;}
+    catch(error){context.outcome=context.nativeResultReturned?'native_result_returned':context.submission.state==='published'?'submitted_outcome_unknown':'not_submitted';
+      if(error instanceof BridgeError)error.details={...error.details,requestId:operationId,operationId,operation,runtime:this.runtime,...(context.sessionId?{sessionId:context.sessionId,identity:context.identity}:{}),deadline:{...deadline,remainingMs:Math.max(0,Math.floor(context.monotonicDeadline-performance.now()))},submission:context.submission,state:context.outcome,outcome:error.details.outcome??(context.submission.state==='published'?'unknown':'not_submitted'),...(context.sessionId?{reconciliation:reconciliationDetails(this.runtime,context.sessionId,operationId)}:{})};
+      context.error=error;throw error;
+    }finally {
+      this.pendingOperations.delete(operationId);
+      if(trace){trace.event('client_end');const ref=await trace.finish(context);context.traceReference=ref;this.traceReferences.set(operationId,ref);if(this.traceReferences.size>128)this.traceReferences.delete(this.traceReferences.keys().next().value);if(context.error instanceof BridgeError)context.error.details.trace=ref;}
+      if(context.result!==null&&typeof context.result==='object')Object.defineProperty(context.result,CLIENT_OPERATION,{value:{operationId,sessionId:context.sessionId,deadline,submission:context.submission,state:context.outcome,receipt:context.receipt,...(context.traceReference?{trace:context.traceReference}:{})},enumerable:false});
+    }
+  }
+
+  async callInternal(operation, args = {}, { session = this.session, timeoutMs = this.timeoutMs, precondition, operationId = randomUUID() } = {},context) {
     this.lastReceipt = undefined;
     this.lastOperation = undefined;
     if (typeof operation !== 'string' || !OPERATION.test(operation) || !object(args)) {
@@ -213,13 +254,16 @@ export class BridgeClient {
     }
     const id = operationId;
     const selected = await this.selectSession(session);
+    context.sessionId=selected.id;context.identity=sessionIdentity(selected);context.trace?.event('session_selected');
+    const assertBudget=()=>{if(this.observationAbort.signal.aborted)throw new BridgeError('OBSERVER_DISCONNECTED','Client transport closed; inspect the original receipt. Native outcome remains unknown.',{outcome:context.submission.state==='published'?'unknown':'not_submitted'});if(performance.now()>=context.monotonicDeadline){if(context.submission.state==='published')this.responseObservations.set(selected.id,{status:'no_response',observedAt:new Date().toISOString(),operationId:id,operation,timeoutMs});throw new BridgeError('REQUEST_TIMEOUT','Client IPC deadline expired. Inspect the original operation receipt. No replay or cancellation was performed.',{outcome:context.submission.state==='published'?'unknown':'not_submitted',stage:context.submission.state==='published'?'filesystem_poll':'selection_or_publication'});}};
+    assertBudget();
     // Once used, this client stays with that process even if another instance
     // later becomes the sole live session. Explicit selection remains possible.
     if (this.session === undefined) this.session = selected.id;
     if (!this.pinnedIdentities.has(selected.id)) this.pinnedIdentities.set(selected.id, sessionIdentity(selected));
     let payload;
-    const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
-    try { payload = JSON.stringify({ id, operation, args, ...(precondition ? {precondition} : {}), expiresAt }); }
+    const expiresAt = context.deadline.expiresAt;
+    try { payload = JSON.stringify({ id, operation, args, ...(precondition ? {precondition} : {}), expiresAt, ...(context.trace?{trace:true}:{}) }); }
     catch (error) { throw new BridgeError('INVALID_ARGUMENT', `Arguments must be serializable JSON: ${error.message}`); }
     const {requests} = await this.validateQueues(selected.id);
     const requestPath = path.join(requests, `${id}.json`);
@@ -235,16 +279,21 @@ export class BridgeClient {
       reconciliation: reconciliationDetails(this.runtime, selected.id, id) };
     this.lastOperation = details;
     this.lastReceipt = undefined;
+    context.trace&&(context.trace.counts.requestBytes=Buffer.byteLength(payload));
     let staged = false;
     try {
       await writeFile(tempPath, payload, { flag: 'wx', mode: 0o600 });
       staged = true;
+      context.trace?.event('staged');
       // Recheck after staging, immediately before publication. Never follows a replacement.
       await this.selectSession(selected.id);
       await this.validateQueues(selected.id);
       await this.confinedPath('sessions', selected.id, 'requests', `${id}.json.tmp`);
+      assertBudget();
+      this.pendingOperations.set(id,{operationId:id,sessionId:selected.id,operation,deadline:context.deadline,submission:{state:'publication_in_progress',expiresAt},outcome:'submitted_outcome_unknown'});
       await rename(tempPath, requestPath);
       details.submission = { state: 'published', publishedAt: new Date().toISOString(), expiresAt };
+      context.submission=details.submission;this.pendingOperations.set(id,{operationId:id,sessionId:selected.id,operation,deadline:context.deadline,submission:context.submission,outcome:'submitted_outcome_unknown'});context.trace?.event('published');
       this.operationPayloads.set(payloadKey, payloadDigest);
       if (this.operationPayloads.size > 1024) this.operationPayloads.delete(this.operationPayloads.keys().next().value);
     } catch (error) {
@@ -255,8 +304,9 @@ export class BridgeClient {
 
     // Once published, leave the request to the bridge. Timeout or client shutdown
     // cannot establish whether the engine has already applied a mutation.
-    const deadline = performance.now() + timeoutMs;
+    const deadline = context.monotonicDeadline;
     while (true) {
+      assertBudget();if(context.trace)context.trace.counts.polls++;
       let raw;
       try {
         await this.validateQueues(selected.id);
@@ -268,6 +318,7 @@ export class BridgeClient {
         if (error.code !== 'ENOENT') throw new BridgeError('IPC_ERROR', `Could not read the KNIME response. Inspect state before retrying: ${error.message}`, details);
       }
       if (raw !== undefined) {
+        if(context.trace)context.trace.counts.resultBytes=Buffer.byteLength(raw);context.trace?.event('result_read');
         let response;
         try {
           response = JSON.parse(raw);
@@ -281,7 +332,11 @@ export class BridgeClient {
         } finally {
           await this.removeConfinedFile('sessions', selected.id, 'responses', `${id}.json`);
         }
+        // Preserve this response before trace persistence or another call can
+        // replace the compatibility-only lastReceipt field.
+        context.receipt = response.receipt === undefined ? undefined : structuredClone(response.receipt);
         this.lastReceipt = response.receipt;
+        context.nativeResultReturned=true;
         this.responseObservations.set(selected.id, { status: 'responded', observedAt: new Date().toISOString(), operationId: id, operation });
         if (!response.ok) throw new BridgeError(response.error.code, response.error.message, { ...response.error.details, ...details,
           outcome: response.error.details?.outcome ?? details.outcome, ...(response.receipt ? { receipt: response.receipt } : {}) });
@@ -292,7 +347,8 @@ export class BridgeClient {
         this.responseObservations.set(selected.id, { status: 'no_response', observedAt: new Date().toISOString(), operationId: id, operation, timeoutMs });
         throw new BridgeError('REQUEST_TIMEOUT', `KNIME session '${selected.id}' in runtime '${this.runtime}' did not respond within ${timeoutMs} ms; the outcome is unknown. Inspect the original operation receipt and workflow state. Transport expiry does not prove cancellation or prevent an accepted action completing. The request was not retried or cancelled.`, { ...details, timeoutMs });
       }
-      await delay(Math.min(this.pollMs, remaining));
+      try {await delay(Math.min(this.pollMs, remaining),undefined,{signal:this.observationAbort.signal});}
+      catch(error){if(error.name==='AbortError')assertBudget();throw error;}
     }
   }
 }

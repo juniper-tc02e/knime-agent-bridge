@@ -6,6 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { services, v02Tools } from '../src/v02-tools.mjs';
 import { IMAGES, structuredResult } from '../src/mcp-result.mjs';
+import {CLIENT_OPERATION} from '../src/client.mjs';
 
 async function fixture() {
  const runtime=await mkdtemp(path.join(tmpdir(),'knime-v02-tools-'));
@@ -24,7 +25,8 @@ async function fixture() {
      for(const change of args.changes){const node=snapshot.nodes.find(n=>n.gatewayId===change.objectId);assert.deepEqual(change.before,{x:node.bounds[0],y:node.bounds[1]});node.bounds[0]=change.after.x;node.bounds[1]=change.after.y;}
      const beforeRevisions={...ctx.revisions};ctx.revisions.layout+='x';ctx.dirty=true;
      client.lastReceipt={operationId:randomUUID(),sessionId:'session',status:'applied',guardCoverage:'apply-time'};
-     return {status:'applied',guardCoverage:'apply-time',beforeRevisions,afterRevisions:{...ctx.revisions}};
+     const result={status:'applied',guardCoverage:'apply-time',beforeRevisions,afterRevisions:{...ctx.revisions}};
+     Object.defineProperty(result,CLIENT_OPERATION,{value:{receipt:client.lastReceipt}});return result;
    }
    throw new Error(`Unexpected ${operation}`);
  }};

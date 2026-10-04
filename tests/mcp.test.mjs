@@ -62,7 +62,7 @@ test('MCP stdio discovery, tools, errors and resources use the real file transpo
 
   await t.test('tool discovery documents explicit sessions and advanced call contracts', async () => {
     const list = await client.listTools();
-    assert.deepEqual(list.tools.map(tool => tool.name).sort(), ['knime_core_call', 'knime_describe', 'knime_desktop_call', 'knime_gateway_call', 'knime_health', 'knime_nodes', 'knime_sessions', 'knime_settings', 'knime_table', 'knime_workflow', 'knime_context','knime_canvas_view','knime_layout_check','knime_layout_plan','knime_layout_apply','knime_operation','knime_verify_workflow','knime_wait','knime_connection','knime_settings_preview','knime_dependencies'].sort());
+    assert.deepEqual(list.tools.map(tool => tool.name).sort(), ['knime_core_call', 'knime_describe', 'knime_desktop_call', 'knime_gateway_call', 'knime_health', 'knime_nodes', 'knime_sessions', 'knime_settings', 'knime_table', 'knime_workflow', 'knime_context','knime_canvas_view','knime_layout_check','knime_layout_plan','knime_layout_apply','knime_operation','knime_verify_workflow','knime_wait','knime_connection','knime_settings_preview','knime_dependencies','knime_diagnostics','knime_detail','knime_history','knime_table_verify'].sort());
     const advanced = list.tools.find(tool => tool.name === 'knime_gateway_call');
     assert.match(advanced.description, /knime_describe/);
     assert.deepEqual(advanced.inputSchema.properties.params.anyOf.map(branch => branch.type), ['array', 'object']);
@@ -131,7 +131,8 @@ test('MCP stdio discovery, tools, errors and resources use the real file transpo
     assert.equal(sessions.structuredContent.sessions[0].alive, true);
     const health = await client.callTool({ name: 'knime_health', arguments: {} });
     assert.equal(health.structuredContent.knimeVersion, '5.12.0');
-    assert.deepEqual(JSON.parse(health.content[0].text), health.structuredContent);
+    assert.equal(JSON.parse(health.content[0].text).detailSource, 'structuredContent');
+    assert.ok(health.content[0].text.length < 2000);
   });
   await t.test('gateway call transmits positional parameters and preserves nested output', async () => {
     const result = await client.callTool({ name: 'knime_gateway_call', arguments: { method: 'WorkflowService.getWorkflow', params: ['project-42', 'root'] } });

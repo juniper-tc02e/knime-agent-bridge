@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "fixture": "100 sequential stdio connections plus 3 parallel clients; no native process",
+  "source": {
+    "version": "0.5.0",
+    "clientSha256": "e89ac014a795e0723b959811da878787de90d2185edca12bfdf06d3fba1d3730",
+    "serverSha256": "02dab151a5d515e4a0c66e33ed193be1374291217e69750a018c5d817c59b66a"
+  },
+  "deadlines": {
+    "owner": "lifecycle_fixture",
+    "initializeMs": 10000,
+    "eofMs": 5000,
+    "failedOnlyCleanupMs": 5000
+  },
+  "node": "v24.15.0",
+  "platform": "win32",
+  "arch": "x64",
+  "completedAt": "2026-10-04T17:31:19.522Z",
+  "observedChildProcesses": 103,
+  "ownedChildrenRemaining": 0,
+  "connectMs": {
+    "sampleCount": 100,
+    "p50": 873.3081000000093,
+    "p95": 1567.4845999999998,
+    "max": 1993.7531000000017
+  },
+  "eofMs": {
+    "sampleCount": 100,
+    "p50": 18.643300000003364,
+    "p95": 30.62409999999909,
+    "max": 34.626900000001115
+  },
+  "rssStartBytes": {
+    "sampleCount": 100,
+    "p50": 78651392,
+    "p95": 78999552,
+    "max": 79101952
+  },
+  "rssEndBytes": {
+    "sampleCount": 100,
+    "p50": 79142912,
+    "p95": 79482880,
+    "max": 79704064
+  },
+  "rssEndSlopeBytesPerIteration": 3232.411305130513,
+  "hostRendering": "unmeasured",
+  "limits": "Fresh server processes; RSS is process-local and not additive physical RAM. No native soak or real host lag causal intervention."
+}

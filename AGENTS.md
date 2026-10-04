@@ -14,6 +14,8 @@ In v0.4, confirm the configured runtime and pinned process with `knime_connectio
 
 Tests that mutate KNIME must create synthetic workflows in `runtime/workspace`. Do not point them at coursework or production workspaces. Stop/restart only the isolated test process you launched, after saving any needed work. Building a new bundle does not update an already running KNIME process.
 
+In v0.5 prefer an explicit named profile pinned to runtime/session/native version/bundle. Use knime_diagnostics for queue/worker observation; UI responsiveness remains unmeasured. Observer expiration never authorizes replay or cancellation. On definitive stdio EOF only the owned observer stops; retain original unknown UUIDs. Page history metadata and fetch exact detail references rather than overfetching all retained evidence. Copied cached paths require named scalar/path inspection and separately authorized refresh. knime_table_verify checks complete stable output and named positive-class metrics; it does not certify fresh inference. Read docs/OBSERVABILITY-0.5.md and docs/VERIFICATION-0.5.md for exact bounds and residual limitations.
+
 The user requested broad local agent access, including live canvas editing. This does not implicitly authorise sending messages, publishing, spending, credential extraction, or running workflows against production systems. Follow the user's current authorisation; do not ask again for routine reversible work already in scope.
 
 Before claiming a release, run adapter tests and the real-process MCP workflow round trip. Record the exact supported build, verified operations and untested gaps in `docs/VERIFICATION.md`. Keep release claims bounded by that evidence.

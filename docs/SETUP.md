@@ -21,14 +21,14 @@ Open [GitHub Releases](https://github.com/juniper-tc02e/knime-agent-bridge/relea
 Keep each version in a separate folder. Extract the selected package to a writable local directory, for example:
 
 ```text
-C:\Tools\knime-agent-bridge-v04\knime-agent-bridge
+C:\Tools\knime-agent-bridge-v05\knime-agent-bridge
 ```
 
 Compare the downloaded archive hash with the published checksum:
 
 ```powershell
-Get-FileHash "$env:USERPROFILE\Downloads\knime-agent-bridge-0.4.0.zip" -Algorithm SHA256
-Get-Content "$env:USERPROFILE\Downloads\knime-agent-bridge-0.4.0.zip.sha256"
+Get-FileHash "$env:USERPROFILE\Downloads\knime-agent-bridge-0.5.0.zip" -Algorithm SHA256
+Get-Content "$env:USERPROFILE\Downloads\knime-agent-bridge-0.5.0.zip.sha256"
 ```
 
 Use `0.1.0-beta.1` or `0.2.0-beta.1` in those filenames for an older release.
@@ -36,6 +36,8 @@ Use `0.1.0-beta.1` or `0.2.0-beta.1` in those filenames for an older release.
 v0.3 includes the previously local beta.2 reliability fixes. Read [the v0.3 verification receipt](VERIFICATION-0.3.md). Save and close the KNIME instance being upgraded before relaunching; new bridge code cannot replace a JAR already loaded in KNIME. Start a fresh MCP client connection to discover all 18 tools.
 
 v0.4 adds context lifecycle, connection identity, settings preflight and effective dependency tools (21 tools). Read [the v0.4 verification receipt](VERIFICATION-0.4.md). To keep an active older session running, use the isolated trial procedure below; upgrade that session only after saving and deliberately relaunching it.
+
+v0.5 exposes 25 tools and adds named pinned profiles, queue/stage diagnostics, compact detail retrieval, async evidence pages and complete table verification. Follow [the v0.5 migration and rollback guide](MIGRATION-0.5.md) and read [its verification receipt](VERIFICATION-0.5.md). Installing files does not change a running JVM or MCP server. Preserve any active older installation until deliberately switching.
 
 ## 3. Install the JavaScript dependencies
 
@@ -67,6 +69,8 @@ node src/cli.mjs health
 
 Startup can take one to two minutes. Wait for `status: "ready"` and `alive: true`. The default workspace is the extracted package's `runtime\workspace`, and the launcher creates a private KNIME configuration. The regular KNIME shortcut does not load this bridge.
 
+If the descriptor stays `starting` with `modernUiReady:false`, inspect KNIME's window. This release observed a KNIME startup fallback to Classic UI when cached workbench state existed without the modern `app_state.json`. Use KNIME's **Open KNIME Modern UI** button/menu and wait for a fresh ready descriptor. The bridge does not delete your cached UI state or fabricate readiness. The isolated verification workspace required a preserved/reset UI state before relaunch; this was separate from workflow data and from the global installation.
+
 If KNIME reports a dialog, finish the dialog in its window and retry health. Keep the KNIME application running while using MCP. Acknowledgement from the launcher means a process was started; readiness comes from the bridge health result.
 
 To use an existing workspace, save and close any KNIME process already using that workspace first, then launch with its full path:
@@ -79,22 +83,22 @@ KNIME allows only one writer to a workspace. Do not run v0.1 and v0.2 against th
 
 ## 5. Connect an MCP client
 
-For a v0.4 trial alongside an active older session, use a **new folder, runtime, workspace and alias**. These commands leave the existing `knime-agent` entry untouched (substitute your extracted folder and Codex executable):
+For a v0.5 trial alongside an active older session, use a **new folder, runtime, workspace and alias**. These commands leave the existing `knime-agent` entry untouched (substitute your extracted folder and Codex executable):
 
 ```powershell
-Set-Location 'C:\Tools\knime-agent-bridge-v04\knime-agent-bridge'
+Set-Location 'C:\Tools\knime-agent-bridge-v05\knime-agent-bridge'
 $env:KNIME_AGENT_RUNTIME = Join-Path (Get-Location) 'runtime'
-node scripts/launch.mjs --workspace (Join-Path $env:KNIME_AGENT_RUNTIME 'workspace-v04-trial')
+node scripts/launch.mjs --workspace (Join-Path $env:KNIME_AGENT_RUNTIME 'workspace-v05-trial')
 node src/cli.mjs connection --runtime $env:KNIME_AGENT_RUNTIME
 node src/cli.mjs sessions --runtime $env:KNIME_AGENT_RUNTIME
 # Copy the ready session ID from sessions, then use it explicitly:
 node src/cli.mjs health --runtime $env:KNIME_AGENT_RUNTIME --session 'SESSION-ID'
-codex mcp add knime-v04 -- 'C:\Program Files\nodejs\node.exe' 'C:\Tools\knime-agent-bridge-v04\knime-agent-bridge\src\server.mjs' --runtime 'C:\Tools\knime-agent-bridge-v04\knime-agent-bridge\runtime' --session 'SESSION-ID'
+codex mcp add knime-v05 -- 'C:\Program Files\nodejs\node.exe' 'C:\Tools\knime-agent-bridge-v05\knime-agent-bridge\src\server.mjs' --runtime 'C:\Tools\knime-agent-bridge-v05\knime-agent-bridge\runtime' --session 'SESSION-ID'
 ```
 
 Open a fresh chat using the new alias. A UUID from another runtime cannot switch an existing server's directory. `knime_connection` shows configured/canonical runtime and process fingerprints without dispatch; `health` observes an actual native response. A ready descriptor alone does not prove UI responsiveness. On process restart, discover the new session and update the isolated alias deliberately. Never point two processes at one writable workspace.
 
-v0.4 exposes 21 tools, including `knime_connection`, `knime_settings_preview` and `knime_dependencies`. Bind one context per live scope, inspect to refresh revisions, read usage, and release it when no in-flight operation or later quality assessment needs it. Use `expected:{}` for a workspace-only create/open context; never send `expected:null`. See [context lifecycle](CONTEXT_LIFECYCLE.md), [configuration preflight](SETTINGS_PREFLIGHT.md), [dependencies](DEPENDENCIES.md) and [connection diagnostics](CONNECTIONS.md).
+v0.5 exposes 25 tools. For an explicit version/bundle-pinned named profile, use the configuration in [MIGRATION-0.5.md](MIGRATION-0.5.md). Bind one context per live scope, inspect to refresh revisions, read usage, and release it when no in-flight operation or later quality assessment needs it. Use `expected:{}` for a workspace-only create/open context; never send `expected:null`. See [context lifecycle](CONTEXT_LIFECYCLE.md), [configuration preflight](SETTINGS_PREFLIGHT.md), [dependencies](DEPENDENCIES.md) and [connection diagnostics](CONNECTIONS.md).
 
 To run the full destructive-to-fixtures acceptance suite, use a separate extracted folder named `knime-agent-bridge`, JDK 21+ (set `KNIME_AGENT_JDK`), the tested installed KNIME and Edge. It creates only synthetic workflows, but must never target coursework:
 
@@ -123,7 +127,7 @@ For another local stdio MCP client, use its equivalent of this configuration, re
   "mcpServers": {
     "knime-agent": {
       "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": ["C:\\Tools\\knime-agent-bridge-v04\\knime-agent-bridge\\src\\server.mjs"]
+      "args": ["C:\\Tools\\knime-agent-bridge-v05\\knime-agent-bridge\\src\\server.mjs"]
     }
   }
 }

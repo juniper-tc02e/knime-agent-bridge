@@ -1,0 +1,5 @@
+variant,operation,samples,p50Ms,p95Ms,maxMs,responseBytes,benchmarkThreadCpuMs,heapBeforeBytes,heapAfterBytes
+baseline,health,25,18.4009,19.3739,73.2045,12157,625,28347112,38749056
+baseline,operation.get,25,19.1156,31.3684,43.5177,19700,625,28347112,38749056
+changed,health,25,22.7583,33.6035,97.8841,50873,859.375,29354016,42943344
+changed,operation.get,25,23.4327,34.6175,35.6555,47865,859.375,29354016,42943344

@@ -6,8 +6,9 @@ import path from 'node:path';
 import { BridgeClient, BridgeError } from './client.mjs';
 import { dispatchTool, errorPayload } from './catalog.mjs';
 import {IMAGES} from './mcp-result.mjs';
+import {readFileSync} from 'node:fs';
 
-export const VERSION = '0.4.0';
+export const VERSION = JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 const HELP = `KNIME Agent Bridge ${VERSION}
 
 Usage: knime-agent <command> [arguments] [options]
@@ -26,6 +27,10 @@ Commands:
 Options:
   --runtime PATH                     IPC runtime directory (or KNIME_AGENT_RUNTIME)
   --session ID                       Explicit session; required if several are live
+  --profile NAME                     Named route with exact native version/bundle expectations
+  --profiles-file PATH               schemaVersion:1 route configuration (requires --profile)
+  --trace-directory PATH             Opt-in metadata traces (128 artifacts; no raw payloads)
+  --lifecycle-file PATH              Optional server instance/EOF receipt (mcp only)
   --params JSON                      Named object or positional array for gateway call
   --args JSON                        Named object for core/desktop call
   --args-file PATH                    UTF-8 JSON file for call/core/desktop arguments
@@ -47,6 +52,7 @@ export function parseCli(argv) {
   try {
     parsed = parseArgs({ args: argv, allowPositionals: true, strict: true, options: {
       runtime: { type: 'string' }, session: { type: 'string' }, params: { type: 'string' }, args: { type: 'string' },
+      profile:{type:'string'},'profiles-file':{type:'string'},'trace-directory':{type:'string'},'lifecycle-file':{type:'string'},
       'args-file': { type: 'string' }, 'precondition-file': {type:'string'}, output:{type:'string'}, service: { type: 'string' }, method: { type: 'string' }, entity: { type: 'string' },
       'timeout-ms': { type: 'string' }, json: { type: 'boolean' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'v' },
     } });
@@ -54,7 +60,7 @@ export function parseCli(argv) {
   const { values, positionals } = parsed;
   const timeoutMs = values['timeout-ms'] === undefined ? undefined : Number(values['timeout-ms']);
   if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 3600000)) throw new BridgeError('INVALID_ARGUMENT', '--timeout-ms must be an integer between 1 and 3600000.');
-  return { values, positionals, clientOptions: { runtime: values.runtime, session: values.session, timeoutMs } };
+  return { values, positionals, clientOptions: { runtime: values.runtime, session: values.session, timeoutMs,profile:values.profile,profilesFile:values['profiles-file'],traceDirectory:values['trace-directory'] } };
 }
 
 async function jsonArgs(values, command) {
@@ -84,7 +90,8 @@ export async function runCli(argv = process.argv.slice(2)) {
     if (values[key] !== undefined && !allowed[command].includes(key)) throw new BridgeError('INVALID_ARGUMENT', `--${key} is not valid for ${command}.`);
   }
   if (rest.length > (command === 'describe' ? 2 : ['call', 'core', 'desktop','tool'].includes(command) ? 1 : 0)) throw new BridgeError('INVALID_ARGUMENT', `Too many positional arguments for ${command}.`);
-  if (command === 'mcp') { const { startServer } = await import('./server.mjs'); await startServer({ client }); return; }
+  if(values['lifecycle-file']&&command!=='mcp')throw new BridgeError('INVALID_ARGUMENT','--lifecycle-file applies only to mcp.');
+  if (command === 'mcp') { const { startServer } = await import('./server.mjs'); await startServer({ client,lifecycleFile:values['lifecycle-file'] }); return; }
   let name, input;
   if (command === 'sessions') { name = 'knime_sessions'; input = {}; }
   if (command === 'connection') { name = 'knime_connection'; input = {}; }

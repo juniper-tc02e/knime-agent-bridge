@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { AsyncQualityHistory } from './history.mjs';
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/;
 export function canonical(value) {
@@ -19,10 +20,17 @@ export class QualityStore {
   // Append-only discovery metadata, never cached payloads or evidence authority.
   #kinds=new Map();
   #fingerprints=new Map();
-  constructor({directory}={}) {
+  #history;
+  constructor({directory,historyOptions={}}={}) {
     if(typeof directory!=='string'||!directory.trim()) throw new Error('A bridge-owned quality directory is required.');
     this.directory=path.resolve(directory);mkdirSync(this.directory,{recursive:true});
+    this.historyOptions={...historyOptions};
   }
+  #asyncHistory() {return this.#history??=new AsyncQualityHistory({directory:this.directory,kinds:this.#kinds,fingerprints:this.#fingerprints,canonical,digest,immutable,options:this.historyOptions});}
+  getAsync(id) {return this.#asyncHistory().get(id);}
+  listAsync(kind,options) {return this.#asyncHistory().list(kind,options);}
+  historyPage(options) {return this.#asyncHistory().page(options);}
+  historyMetrics() {return this.#asyncHistory().metrics();}
   put(kind,payload,{id=randomUUID()}={}) {
     if(!identifier.test(id)||!identifier.test(kind)) throw new Error('Invalid immutable record identifier.');
     if(!payload||typeof payload!=='object'||Array.isArray(payload)) throw new Error('Record payload must be an object.');

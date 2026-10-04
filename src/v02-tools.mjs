@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import {z} from 'zod';
-import {BridgeError} from './client.mjs';
+import {BridgeError,CLIENT_OPERATION} from './client.mjs';
 import {readOperation} from './operations.mjs';
 import {withImages} from './mcp-result.mjs';
 import {canonical} from './quality/store.mjs';
@@ -24,28 +24,28 @@ export async function services(client,adapters={}) {
   const {QualityManager}=await import('./quality/receipt.mjs');
   const store=new QualityStore({directory:path.join(client.runtime,'quality')});
   let quality;
-  const observe=current=>{
-   const previous=store.list('context-observation').filter(r=>r.contextId===current.contextId).at(-1);
+  const observe=async current=>{
+   const previous=(await store.listAsync('context-observation')).filter(r=>r.contextId===current.contextId).at(-1);
    if(previous&&same(previous.revisions,current.revisions)&&previous.dirty===current.dirty)return;
    store.put('context-observation',current);
    if(!previous||!quality)return;
    const changed=['structure','configuration','layout','execution'].filter(d=>previous.revisions?.[d]!==current.revisions?.[d]);
    if(!changed.length&&previous.dirty===current.dirty)return;
    const dimensions=changed.some(d=>['structure','configuration'].includes(d))?['structure','configuration','executionData','visual','persistence']:changed.includes('execution')?['executionData','persistence',...(changed.includes('layout')?['visual']:[])]:['visual','persistence'];
-   for(const task of store.list('quality-task'))if(projectMatches(store.get('context-'+task.initialContextId),current))quality.recordChange({taskId:task.taskId,contextId:current.contextId,scopeId:current.workflowId,dimensions});
+   for(const task of (await store.listAsync('quality-task')))if(projectMatches(store.get('context-'+task.initialContextId),current))await quality.recordChangeAsync({taskId:task.taskId,contextId:current.contextId,scopeId:current.workflowId,dimensions});
   };
   const context=async(contextId,scopeId)=>{
    const saved=store.get('context-'+contextId);
    if(scopeId&&scopeId!==saved.workflowId) {
     // A root context is never reused as proof about a different nested scope.
-    const known=store.list('context').find(c=>c.sessionId===saved.sessionId&&c.projectId===saved.projectId&&c.workflowId===scopeId);
+    const known=(await store.listAsync('context')).find(c=>c.sessionId===saved.sessionId&&c.projectId===saved.projectId&&c.workflowId===scopeId);
     if(!known)throw new BridgeError('SCOPE_NOT_BOUND','Bind and inspect the requested nested scope before verifying it.');
     const current=await client.call('context.inspect',{contextId:known.contextId},{session:known.sessionId});
-    observe(current);return {...current,scopeId:current.workflowId};
+    await observe(current);return {...current,scopeId:current.workflowId};
    }
    const current=await client.call('context.inspect',{contextId},{session:saved.sessionId});
    for(const key of ['contextId','sessionId','projectId','workflowId','workspace'])if(current[key]!==saved[key])throw new BridgeError('CONTEXT_CHANGED',`Bound ${key} changed.`);
-   observe(current);return {...current,scopeId:current.workflowId};
+   await observe(current);return {...current,scopeId:current.workflowId};
   };
   quality=new QualityManager({store,getContext:context});
   const snapshot=async ctx=>{
@@ -71,9 +71,9 @@ export async function noteMutation(client,{precondition,receipt,uncertain=false}
  if(!precondition?.contextId)return;
  const {store,quality}=await services(client);let ctx;
  try{ctx=store.get('context-'+precondition.contextId);}catch{return;}
- for(const task of store.list('quality-task')) {
+ for(const task of (await store.listAsync('quality-task'))) {
   if(!projectMatches(store.get('context-'+task.initialContextId),ctx))continue;
-  quality.recordChange({taskId:task.taskId,contextId:ctx.contextId,scopeId:ctx.workflowId??'workspace',dimensions:['structure','configuration','executionData','visual','persistence'],operationId:receipt?.operationId,uncertain:uncertain||receipt?.guardCoverage==='unverified'});
+  await quality.recordChangeAsync({taskId:task.taskId,contextId:ctx.contextId,scopeId:ctx.workflowId??'workspace',dimensions:['structure','configuration','executionData','visual','persistence'],operationId:receipt?.operationId,uncertain:uncertain||receipt?.guardCoverage==='unverified'});
  }
 }
 async function bind(client,input) {
@@ -136,17 +136,17 @@ async function apply(client,input) {
    if(p.changes.some(c=>c.kind==='connection-bendpoints')){const native=await client.call('canvas.preview',{contextId:ctx.contextId},{session:ctx.sessionId});if(!native.nativeLayout)throw new Error('Native route read-back unavailable.');return native.nativeLayout;}
    return {nodes:(graph.nodes??[]).flatMap(n=>[n.id,n.gatewayId].filter(Boolean).map(id=>({id,position:Array.isArray(n.bounds)?{x:n.bounds[0],y:n.bounds[1]}:n.position}))),annotations:(graph.annotations??[]).map(a=>({id:a.id,bounds:{x:a.x,y:a.y,width:a.width,height:a.height}})),connections:graph.connections??[]};
   },
-  applyChange:async(change,precondition)=>{const ctx=await svc.context(p.contextId);const native=await client.call('layout.apply',{contextId:ctx.contextId,changes:[change]},{session:ctx.sessionId,precondition,timeoutMs:input.timeoutMs});return {...native,operationId:client.lastReceipt?.operationId??null,guardCoverage:native.guardCoverage??client.lastReceipt?.guardCoverage??'unverified'};},
+  applyChange:async(change,precondition)=>{const ctx=await svc.context(p.contextId);const native=await client.call('layout.apply',{contextId:ctx.contextId,changes:[change]},{session:ctx.sessionId,precondition,timeoutMs:input.timeoutMs});const receipt=native?.[CLIENT_OPERATION]?.receipt;return {...native,operationId:receipt?.operationId??null,guardCoverage:native.guardCoverage??receipt?.guardCoverage??'unverified'};},
   renderAndCheck:async ctx=>{rendered=await produceCanvas(client,{contextId:ctx.contextId,mode:'tiles',tileLimit:1});const checked=await check(client,{evidenceId:rendered.evidence.evidenceId});return {...checked,evidenceId:checked.id,coverage:{...checked.coverage,complete:checked.coverage.complete===true&&rendered.evidence.freshness==='verified'&&rendered.evidence.coverage.complete===true}};},
  });
  const ctx=await svc.context(p.contextId);
- for(const task of svc.store.list('quality-task'))if(projectMatches(svc.store.get('context-'+task.initialContextId),ctx))svc.quality.recordChange({taskId:task.taskId,contextId:ctx.contextId,scopeId:ctx.workflowId,dimensions:['visual','persistence'],operationId:operation.operationId,uncertain:operation.status!=='applied'||operation.guardCoverage!=='apply-time'});
+ for(const task of (await svc.store.listAsync('quality-task')))if(projectMatches(svc.store.get('context-'+task.initialContextId),ctx))await svc.quality.recordChangeAsync({taskId:task.taskId,contextId:ctx.contextId,scopeId:ctx.workflowId,dimensions:['visual','persistence'],operationId:operation.operationId,uncertain:operation.status!=='applied'||operation.guardCoverage!=='apply-time'});
  const metadata={operation,...(rendered?{evidence:rendered.evidence}:{}),next:'Inspect emitted readable tiles and verify persistence. Applied edits alone do not establish completion.'};
  return rendered?imageResponse(svc.store,metadata,rendered):metadata;
 }
 const rect=z.object({x:z.number().finite(),y:z.number().finite(),width:z.number().positive(),height:z.number().positive()}).strict();
 async function baselineTask(svc,task) {
- for(const scopeId of task.requestedScopes)try{const ctx=await svc.context(task.initialContextId,scopeId),integrity=await svc.integrity(ctx);svc.store.put('task-baseline',{taskId:task.taskId,contextId:ctx.contextId,scopeId,integrity});if(!svc.quality.manifest(task.taskId).contextIds.includes(ctx.contextId))svc.quality.recordChange({taskId:task.taskId,contextId:ctx.contextId,scopeId,dimensions:task.requiredDimensions});}catch(error){svc.store.put('task-baseline',{taskId:task.taskId,scopeId,integrity:null,error:error.message});}
+ for(const scopeId of task.requestedScopes)try{const ctx=await svc.context(task.initialContextId,scopeId),integrity=await svc.integrity(ctx);svc.store.put('task-baseline',{taskId:task.taskId,contextId:ctx.contextId,scopeId,integrity});if(!(await svc.quality.manifestAsync(task.taskId)).contextIds.includes(ctx.contextId))await svc.quality.recordChangeAsync({taskId:task.taskId,contextId:ctx.contextId,scopeId,dimensions:task.requiredDimensions});}catch(error){svc.store.put('task-baseline',{taskId:task.taskId,scopeId,integrity:null,error:error.message});}
 }
 async function dataAssertion(svc,ctx,check) {
  if(!check.nodeId||!Number.isInteger(check.portIndex))return {...check,actual:null,coverage:'incomplete',reason:'Explicit nodeId/portIndex required.'};
@@ -168,11 +168,11 @@ async function dataAssertion(svc,ctx,check) {
  return {id:check.id,kind:check.kind,expected:check.expected,actual,coverage:complete&&stable&&!opaque(actual)?check.coverage:'incomplete'};
 }
 async function dimensionEvidence(svc,taskId) {
- let manifest=svc.quality.manifest(taskId);const ids=[];
+ let manifest=(await svc.quality.manifestAsync(taskId));const ids=[];
  for(const scopeId of new Set([...manifest.requestedScopes,...manifest.changedScopes])) {
   let ctx,integrity;try{ctx=await svc.context(manifest.initialContextId,scopeId);integrity=await svc.integrity(ctx);}catch(error){ids.push(svc.store.put('dimension-error',{taskId,scopeId,error:error.message}).id);continue;}
-  if(!svc.quality.manifest(taskId).contextIds.includes(ctx.contextId))svc.quality.recordChange({taskId,contextId:ctx.contextId,scopeId,dimensions:manifest.requiredDimensions});
-  manifest=svc.quality.manifest(taskId);const baseline=svc.store.list('task-baseline').find(r=>r.taskId===taskId&&r.scopeId===scopeId)?.integrity;
+  if(!(await svc.quality.manifestAsync(taskId)).contextIds.includes(ctx.contextId))await svc.quality.recordChangeAsync({taskId,contextId:ctx.contextId,scopeId,dimensions:manifest.requiredDimensions});
+  manifest=(await svc.quality.manifestAsync(taskId));const baseline=(await svc.store.listAsync('task-baseline')).find(r=>r.taskId===taskId&&r.scopeId===scopeId)?.integrity;
   const put=(dimension,coverage,checks,extra={})=>ids.push(svc.store.put('dimension-check',{taskId,contextId:ctx.contextId,scopeId,revisions:ctx.revisions,dimension,coverage,checks,...extra}).id);
   if(manifest.requiredDimensions.includes('structure'))put('structure',{complete:!!baseline&&integrity.coverage.structure==='full'},baseline?[{kind:'preserved-topology',expected:baseline.structureDigest,actual:integrity.structureDigest}]:[]);
   if(manifest.requiredDimensions.includes('configuration'))put('configuration',{complete:!!baseline&&integrity.coverage.configuration==='full'&&integrity.coverage.protectedSettings!=='incomplete',protectedSettings:integrity.coverage.protectedSettings},baseline?[{kind:'preserved-settings',expected:baseline.configurationDigest,actual:integrity.configurationDigest}]:[]);
@@ -190,7 +190,7 @@ async function dimensionEvidence(svc,taskId) {
 async function verify(client,{action,input}) {
  if(Object.hasOwn(input,'action'))throw new BridgeError('INVALID_ARGUMENT','Nested input cannot replace action.');
  const parsed=verifyWorkflowSchema.parse({action,...input}),{action:_action,...args}=parsed,svc=await services(client);
- if(action==='begin'){const task=await svc.quality.begin(args);await baselineTask(svc,task);return svc.quality.manifest(task.taskId);}
+ if(action==='begin'){const task=await svc.quality.begin(args);await baselineTask(svc,task);return (await svc.quality.manifestAsync(task.taskId));}
  if(action==='assess'){const ids=await dimensionEvidence(svc,args.taskId);return svc.quality.assess({...args,evidenceIds:[...new Set([...args.evidenceIds,...ids])]});}
  return svc.quality[action](args);
 }

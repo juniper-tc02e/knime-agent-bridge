@@ -16,7 +16,8 @@ async function setup(t,id='A') {
     await fs.writeFile(path.join(dir,'session.json'),JSON.stringify({id,pid:process.pid,heartbeat:new Date().toISOString(),status:'ready'}));
     return dir;
   };
-  return {runtime,dir:await publish(id),publish,client:new BridgeClient({runtime,pollMs:5,timeoutMs:40})};
+  // The client deadline now includes selection and confined staging on Windows.
+  return {runtime,dir:await publish(id),publish,client:new BridgeClient({runtime,pollMs:5,timeoutMs:300})};
 }
 test('a selected session remains pinned when a different sole session appears',async t=>{
   const f=await setup(t);

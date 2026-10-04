@@ -4,9 +4,11 @@
 
 Inspect workflows and node settings, edit native graphs, run nodes, read outputs, and save projects from a local AI client. MCP is the agent interface; the CLI uses the same native bridge for scripts and diagnosis.
 
-**Current package: 0.4.0.** Independent integration; not an official KNIME product. No Business Hub subscription or hosted bridge is required. AI-client and external workflow-service costs are separate.
+**Current package: 0.5.0.** Independent integration; not an official KNIME product. No Business Hub subscription or hosted bridge is required. AI-client and external workflow-service costs are separate.
 
-v0.4 provides 21 MCP tools: context usage/release/pruning, pinned runtime and process diagnostics, detached typed settings preview with native validation, and variable-resolved dependency inspection. Filtered evidence lookup avoids repeatedly parsing unrelated retained history while preserving fresh selected-record integrity checks. It preserves known operation outcomes after retention expiry and exposes original-UUID reconciliation without automatic replay. Native graph editing, execution, paged data, canvas previews and guarded visual quality checks remain available.
+v0.5 provides **25 MCP tools**, explicit pinned connection profiles, native queue/stage diagnostics, owned stdio lifecycle receipts, separate observer/operation deadlines, compact results with complete detail retrieval, async evidence history and complete keyed table verification with named binary metrics. Named scalar/path checks help detect inherited paths in copied workflows. It preserves v0.4 context lifecycle, typed settings preflight, deduplication, revision guards and original-UUID recovery. Native graph editing, execution and canvas previews remain available.
+
+The reported desktop lag cause remains unknown. These changes improve diagnosis and measured Node responsiveness; they do not certify faster training or fresh model inference. Read [v0.5 verification and remaining limits](docs/VERIFICATION-0.5.md).
 
 ## Get started
 
@@ -30,12 +32,13 @@ Wait for KNIME readiness before connecting. v0.2 canvas rendering also needs the
 
 | Release | Focus |
 |---|---|
+| [v0.5](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.5.0) | Long-session identity, diagnostics, lifecycle, bounded history/detail and complete output evidence |
 | [v0.4](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.4.0) | Context lifecycle, runtime identity, settings preflight, effective dependencies and operation reconciliation |
 | [v0.3](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.3.1) | Settings reliability, Windows recovery, readable load warnings and completion polling |
 | [v0.1 beta](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.1.0-beta.1) | Native workflow editing, configuration, execution and output inspection |
 | [v0.2 beta](https://github.com/juniper-tc02e/knime-agent-bridge/releases/tag/v0.2.0-beta.1) | Canvas visibility, layout checks and guarded quality workflow |
 
-[Read the exact verification evidence](docs/VERIFICATION-0.4.md) before relying on a capability. Internal KNIME APIs are version-specific; other platforms/builds need verification. v0.1/v0.2 remain available as historical prereleases.
+[Read the exact verification evidence](docs/VERIFICATION-0.5.md) before relying on a capability. Internal KNIME APIs are version-specific; other platforms/builds need verification. Earlier releases remain available.
 
 ## Agent workflow
 
@@ -48,7 +51,10 @@ Native advanced calls can invoke workflow side effects. Use the same authorizati
 - [Setup and upgrade guide](docs/SETUP.md)
 - [Native settings/data API](docs/CORE_API.md)
 - [Gateway discovery and graph commands](docs/GATEWAY_API.md)
-- [Verified behavior and limits](docs/VERIFICATION-0.4.md)
+- [Verified behavior and limits](docs/VERIFICATION-0.5.md)
+- [v0.5 migration and rollback](docs/MIGRATION-0.5.md)
+- [Diagnostics, clocks and complete evidence](docs/OBSERVABILITY-0.5.md)
+- [Issue diagnosis and status](docs/DIAGNOSIS-0.5.md)
 - [Canvas and context API](docs/VISUAL_API.md)
 - [Quality evidence contract](docs/QUALITY_CONTRACT.md)
 - [Context lifecycle](docs/CONTEXT_LIFECYCLE.md)

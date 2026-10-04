@@ -1,3 +1,4 @@
+import {VERSION} from '../src/cli.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -11,7 +12,7 @@ test('live MCP context capacity, release and historical evidence survive bulk li
  await client.connect(new StdioClientTransport({command:process.execPath,args:[path.resolve('src/server.mjs'),'--runtime',process.env.KNIME_AGENT_RUNTIME],stderr:'pipe'}));
  const raw=async(action,args={})=>{const r=await client.callTool({name:'knime_context',arguments:{action,...args}});if(r.isError)throw Error(JSON.stringify(r.structuredContent));return r.structuredContent;};
  const healthResult=await client.callTool({name:'knime_health',arguments:{}});assert.equal(healthResult.isError??false,false);const health=healthResult.structuredContent;
- assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace-w2-v04-/);assert.equal(health.bridgeVersion,'0.4.0');
+ assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace-w2-v04-/);assert.equal(health.bridgeVersion,VERSION);
  try{
   const start=await raw('usage');
   for(let i=0;i<start.remaining;i+=batch){const bound=await Promise.all(Array.from({length:Math.min(batch,start.remaining-i)},()=>raw('bind')));ids.push(...bound.map(c=>c.contextId));}

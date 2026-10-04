@@ -1,3 +1,4 @@
+import {VERSION} from '../src/cli.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -8,7 +9,7 @@ import {BridgeClient} from '../src/client.mjs';
 import {readOperation} from '../src/operations.mjs';
 
 test('native original UUID reconciliation preserves expired outcome and never repeats workflow creation',{skip:process.env.KNIME_V04_NATIVE!=='1',timeout:30000},async()=>{
- const client=new BridgeClient(),health=await client.call('health');assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace-w2-v04-/);assert.equal(health.bridgeVersion,'0.4.0');
+ const client=new BridgeClient(),health=await client.call('health');assert.match(health.workspace,/knime-agent-bridge.*runtime.*workspace-w2-v04-/);assert.equal(health.bridgeVersion,VERSION);
  const context=await client.call('context.bind',{}),precondition={contextId:context.contextId,expected:{}};
  const operationId=randomUUID(),itemName='V04 Reconcile '+operationId,args={method:'SpaceService.createWorkflow',params:{spaceProviderId:'local',spaceId:'local',itemId:'root',itemName}};
  const first=await client.call('gateway.call',args,{operationId,precondition});assert.ok(first.id);

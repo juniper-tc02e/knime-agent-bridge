@@ -2,6 +2,28 @@
 
 Target: installed KNIME Analytics Platform 5.12.0, Java 21. `CoreAccess` looks up the already loaded gateway `ProjectManager` project. It does not load another copy of a workflow or edit workflow XML. Port and node data are read under the workflow lock. Execution methods schedule KNIME jobs and never wait for those jobs under the lock.
 
+## v0.5 complete output and workflow export
+
+`core.table.read` accepts `expectedTableIdentity` from the first page. Replacement is rejected under the workflow lock before rows are accessed. Responses include the exact source node/scope/port, all four revisions, immutable table token and explicit cached/freshness flags. `knime_table_verify` supplies bounded complete row/key/value coverage, named constants and optional binary metrics; it never executes nodes and leaves fresh inference unverified. See [OBSERVABILITY-0.5.md](OBSERVABILITY-0.5.md).
+
+`core.workflow.export` invokes the installed **org.knime.core.node.workflow.WorkflowExporter.exportInto** to create a fresh native `.knwf`. This is distinct from port export. Its only target is an already loaded **local project root**. Do not supply `workflowId`, `nodeId`, `path` or an arbitrary source/destination. It requires a current context precondition with structure/configuration/layout/execution revisions, refuses a dirty or executing root, and never saves/resets/executes implicitly.
+
+Example arguments for `knime_core_call`, after explicitly saving and observing the intended root:
+
+```json
+{
+  "operation": "core.workflow.export",
+  "args": {"projectId": "DISCOVERED-PROJECT-ID", "excludeData": false, "maxBytes": 134217728, "maxEntries": 20000},
+  "precondition": {"contextId": "BOUND-ROOT-CONTEXT-ID", "expected": {"structure": "CURRENT", "configuration": "CURRENT", "layout": "CURRENT", "execution": "CURRENT"}}
+}
+```
+
+Replace every target/revision placeholder with observed values; the strings `CURRENT` are not valid current revisions. Discover the installed contract through `core.describe` before submitting an advanced call.
+
+The bridge chooses `runtime/exports/<new UUID>.knwf`, rejects links/junctions and existing destinations, bounds source/output bytes and archive entries, and verifies source identities plus full archive entry SHA-256 manifests. Default/max bytes are 128/512 MiB; max entries 20,000; source depth 64. Source bounds apply before data exclusion. Windows file identities use the installed JNA native API when Java fileKey is unavailable. Protected runtime/parent/directory/temp identities are checked; cleanup never deletes a replacement file or an unconfirmed published target.
+
+Successful export reports forced/closed/hash-verified file durability and `directoryDurability:"not_fsynced"`. Full manifests may use a compact detail reference. Filesystem changes after the final check remain possible; verify the artifact SHA-256 again when consuming it. `excludeData:false` includes available saved cached resources; exported bytes cannot certify fresh inference or portable external checkpoints/files/runtimes. Native exporter verification, persistence and actual canvas review are separate facts.
+
 ## Identifiers and shared arguments
 
 Graph operations require `projectId`, obtained from the gateway/desktop project operations. The optional `workflowId` selects a nested component or metanode. The optional `nodeId` selects a node within that workflow; omitting it selects the workflow itself. Use the full native IDs returned by `core.snapshot` (for example `0:3:7`). Relative IDs and `root` are accepted as conveniences. Full IDs outside an explicitly selected workflow are rejected; resolution never falls back to an unrelated root node. A missing or unloaded project is rejected.

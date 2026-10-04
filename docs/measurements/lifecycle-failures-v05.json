@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "fixture": "owned synthetic MCP stdio lifecycle; no native process",
+  "attempts": [
+    {
+      "status": "failed",
+      "primary": {
+        "message": "OS creation identity is unavailable.",
+        "observedAt": "2026-10-04T16:50:37.847Z",
+        "clock": "process_monotonic",
+        "firstFailureMs": 20635.4551
+      },
+      "cleanup": {
+        "owner": "lifecycle_fixture",
+        "deadlineMs": 25635.4551,
+        "remainingMs": 4983.077099999999,
+        "ownedChildrenRemaining": 0
+      },
+      "secondaryErrorCount": 0,
+      "failedIterations": [
+        22
+      ],
+      "completedSamples": 24,
+      "source": {
+        "clientSha256": "e89ac014a795e0723b959811da878787de90d2185edca12bfdf06d3fba1d3730",
+        "serverSha256": "02dab151a5d515e4a0c66e33ed193be1374291217e69750a018c5d817c59b66a"
+      }
+    },
+    {
+      "status": "failed",
+      "primary": {
+        "message": "OS creation identity is unavailable.",
+        "observedAt": "2026-10-04T16:52:28.013Z",
+        "clock": "process_monotonic",
+        "firstFailureMs": 10951.5955
+      },
+      "cleanup": {
+        "owner": "lifecycle_fixture",
+        "deadlineMs": 15951.5955,
+        "remainingMs": 4895.785599999999,
+        "ownedChildrenRemaining": 0
+      },
+      "secondaryErrorCount": 0,
+      "failedIterations": [
+        3
+      ],
+      "completedSamples": 5,
+      "source": {
+        "clientSha256": "e89ac014a795e0723b959811da878787de90d2185edca12bfdf06d3fba1d3730",
+        "serverSha256": "02dab151a5d515e4a0c66e33ed193be1374291217e69750a018c5d817c59b66a"
+      }
+    },
+    {
+      "status": "failed",
+      "primary": {
+        "message": "OS creation identity is unavailable.",
+        "observedAt": "2026-10-04T16:55:35.421Z",
+        "clock": "process_monotonic",
+        "firstFailureMs": 26767.6407
+      },
+      "cleanup": {
+        "owner": "lifecycle_fixture",
+        "deadlineMs": 31767.6407,
+        "remainingMs": 4982.271799999999,
+        "ownedChildrenRemaining": 0
+      },
+      "secondaryErrorCount": 0,
+      "failedIterations": [
+        19
+      ],
+      "completedSamples": 21,
+      "source": {
+        "clientSha256": "e89ac014a795e0723b959811da878787de90d2185edca12bfdf06d3fba1d3730",
+        "serverSha256": "02dab151a5d515e4a0c66e33ed193be1374291217e69750a018c5d817c59b66a"
+      }
+    }
+  ],
+  "interpretation": "OS creation identity was unavailable; cause not established. Later 13/13 diagnostic probe and 103/103 final-source qualification passed; neither retroactively explains earlier failures. No numeric PID alone authorizes ownership or killing."
+}

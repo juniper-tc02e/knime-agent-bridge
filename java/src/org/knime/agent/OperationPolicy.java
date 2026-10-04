@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /** Exact native guards. Unknown expert gateway actions remain visibly unverified. */
 final class OperationPolicy {
-    private static final Set<String> READS=Set.of("health","context.bind","context.inspect","context.usage","context.release","context.prune","dependency.inspect","operation.get","canvas.preview","canvas.viewport","canvas.capabilities",
+    private static final Set<String> READS=Set.of("health","bridge.diagnostics","context.bind","context.inspect","context.usage","context.release","context.prune","dependency.inspect","operation.get","canvas.preview","canvas.viewport","canvas.capabilities",
         "gateway.describe","core.describe","core.snapshot","core.settings.get","core.settings.preview","core.table.read","core.port.inspect","core.nodes.search","core.nodes.details",
         "desktop.describe","desktop.functions","desktop.uiState");
     private static final Set<String> GATEWAY_READS=Set.of("ApplicationService.getState","WorkflowService.getWorkflow","WorkflowService.getWorkflowMonitorState",
@@ -17,12 +17,13 @@ final class OperationPolicy {
     private static final ThreadLocal<Guard> CURRENT=new ThreadLocal<>();
     static boolean mutation(String op,JsonNode args){return !READS.contains(op)&&!(op.equals("gateway.call")&&GATEWAY_READS.contains(args.path("method").asText()));}
     static String guardCoverage(String op,JsonNode args) {
-        if(Set.of("core.settings.patch","core.execute","core.reset","layout.apply","core.port.export").contains(op))return "apply-time";
+        if(Set.of("core.settings.patch","core.execute","core.reset","layout.apply","core.port.export","core.workflow.export").contains(op))return "apply-time";
         if(op.startsWith("desktop.")||op.equals("core.cancel"))return "dispatch-only";
         if(op.equals("gateway.call")&&Set.of("WorkflowService.executeWorkflowCommand","WorkflowService.undoWorkflowCommand","WorkflowService.redoWorkflowCommand","SpaceService.createWorkflow").contains(args.path("method").asText()))return "dispatch-only";
         return "unverified";
     }
     static List<String> dimensions(String op,JsonNode args) {
+        if(op.equals("core.workflow.export"))return List.of("structure","configuration","layout","execution");
         if(op.equals("layout.apply"))return List.of("structure","configuration","layout");
         if(op.equals("core.cancel"))return List.of("structure","configuration","execution");
         if(op.startsWith("core."))return List.of("structure","configuration");
@@ -45,6 +46,7 @@ final class OperationPolicy {
     static ObjectNode coverage() {
         ObjectNode out=BridgeActivator.JSON.createObjectNode();
         out.put("layout.apply","apply-time").put("core.settings.patch","apply-time").put("core.execute","apply-time").put("core.reset","apply-time")
+            .put("core.workflow.export","apply-time")
             .put("core.cancel","dispatch-only").put("desktop.lifecycle","dispatch-only").put("gateway.commands","dispatch-only").put("gateway.unknown","unverified");
         return out;
     }
